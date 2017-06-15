@@ -1,0 +1,8 @@
+redis-grep
+redisgrep.py
+setup.py
+Redis_Grepper.egg-info/PKG-INFO
+Redis_Grepper.egg-info/SOURCES.txt
+Redis_Grepper.egg-info/dependency_links.txt
+Redis_Grepper.egg-info/requires.txt
+Redis_Grepper.egg-info/top_level.txt

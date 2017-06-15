@@ -1,0 +1,11 @@
+Metadata-Version: 1.1
+Name: Redis-Grepper
+Version: 0.1.2
+Summary: Perform regex searches through Redis values
+Home-page: http://github.com/igstan/redis-grep
+Author: Ionut G. Stan
+Author-email: ionut.g.stan@gmail.com
+License: BSD
+Download-URL: http://github.com/igstan/redis-grep/zipball/0.1.2
+Description: UNKNOWN
+Platform: UNKNOWN
