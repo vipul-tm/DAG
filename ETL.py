@@ -1,19 +1,8 @@
-import os
-import socket
 from airflow import DAG
-from airflow.contrib.hooks import SSHHook
 from airflow.operators import PythonOperator
-from airflow.operators import DummyOperator
-from airflow.operators import BashOperator
-from airflow.operators import BranchPythonOperator
-from airflow.operators import MySqlOperator
-from airflow.hooks import RedisHook
-from airflow.hooks.mysql_hook import MySqlHook
-from datetime import datetime, timedelta	
+from datetime import datetime, timedelta    
 from airflow.models import Variable
-from airflow.operators import TriggerDagRunOperator
 from airflow.operators.subdag_operator import SubDagOperator
-
 from subdags.network import network_etl
 from subdags.service import service_etl
 from subdags.format import format_etl
@@ -25,20 +14,8 @@ from etl_tasks_functions import init_etl
 from etl_tasks_functions import debug_etl
 from airflow.operators import ExternalTaskSensor
 from airflow.operators import MemcToMySqlOperator
-import itertools
-import socket
-import sys
-import time
-import re
-import random
-import logging
-import traceback
-import os
-import json
-import utility
-import Queue
 
-#TODO: Commenting 
+#TODO: Commenting Optimize
 #######################################DAG CONFIG####################################################################################################################
 
 default_args = {
@@ -82,17 +59,17 @@ network_etl = SubDagOperator(
     subdag=network_etl(PARENT_DAG_NAME, CHILD_DAG_NAME_NETWORK, datetime(2017, 2, 24),main_etl_dag.schedule_interval),
     task_id=CHILD_DAG_NAME_NETWORK,
     dag=main_etl_dag
-	)
+    )
 service_etl = SubDagOperator(
     subdag=service_etl(PARENT_DAG_NAME, CHILD_DAG_NAME_SERVICE, datetime(2017, 2, 24),main_etl_dag.schedule_interval),
     task_id=CHILD_DAG_NAME_SERVICE,
     dag=main_etl_dag,
-	)
+    )
 format_etl = SubDagOperator(
     subdag=format_etl(PARENT_DAG_NAME, CHILD_DAG_NAME_FORMAT, datetime(2017, 2, 24),main_etl_dag.schedule_interval),
     task_id=CHILD_DAG_NAME_FORMAT,
     dag=main_etl_dag,
-	)
+    )
 #topology_etl = SubDagOperator(
 #    subdag=topology_etl(PARENT_DAG_NAME, CHILD_DAG_NAME_TOPOLOGY, datetime(2017, 2, 24),main_etl_dag.schedule_interval),
 #    task_id=CHILD_DAG_NAME_TOPOLOGY,

@@ -2,7 +2,6 @@ from airflow.models import DAG
 from airflow.operators.dummy_operator import DummyOperator
 from datetime import datetime, timedelta
 from airflow.operators import PythonOperator
-from airflow.operators import MemcToMySqlOperator
 from airflow.hooks import RedisHook
 from airflow.models import Variable
 from subdags.format_utility import get_threshold
@@ -10,7 +9,6 @@ from subdags.format_utility import get_device_type_from_name
 from subdags.format_utility import get_previous_device_states
 from subdags.format_utility import memcachelist
 from subdags.format_utility import forward_five_min
-from subdags.format_utility import forward_two_min
 from subdags.format_utility import backtrack_x_min
 from subdags.events_utility import get_device_alarm_tuple
 from subdags.events_utility import update_device_state_values
@@ -18,10 +16,6 @@ from subdags.events_utility import update_last_device_down
 import json
 import logging
 import traceback
-import tempfile
-import os
-from os import listdir
-from os.path import isfile, join
 from airflow.hooks import  MemcacheHook
 import time
 import math
