@@ -55,6 +55,7 @@ redis_hook_network_alarms = RedisHook(redis_conn_id="redis_hook_network_alarms")
 event_rules = eval(Variable.get('event_rules'))
 operators = eval(Variable.get('operators')) #get operator Dict from 
 config = eval(Variable.get("system_config"))
+debug_mode = eval(Variable.get("debug_mode"))
 result_nw_memc_key = []
 result_sv_memc_key = []
 HEADER = '\033[95m'
@@ -590,7 +591,10 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 			for k,traps in enumerate(machine_data):
 				machine_data[k] = traps
 			logging.info("%s of length %s"%("queue:network:snmptt:%s"%task_for_machine,len(machine_data)))
-			redis_hook_network_alarms.rpush("queue:network:snmptt:%s"%task_for_machine,machine_data)
+			if not debug_mode:
+				redis_hook_network_alarms.rpush("queue:network:snmptt:%s"%task_for_machine,machine_data)
+			else:
+				logging.info("Debug Mode is active , not inserting into redis")
 		else:
 			logging.info("No Data Foubnd onto site : %s" %task_for_machine)
 
@@ -603,7 +607,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 	event_site_tasks = {}
 	service_format_sensor_dict = {}
 	network_format_sensor_dict = {}
-	debug_mode = eval(Variable.get("debug_mode"))
+	
 	update_refer = PythonOperator(
 				task_id="update_device_states",
 				provide_context=False,
@@ -613,8 +617,8 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 	
 				dag=dag_subdag_format
 				)
-	if not debug_mode:
-		update_last_device_down_task = PythonOperator(
+	
+	update_last_device_down_task = PythonOperator(
 				task_id="update_last_device_down",
 				provide_context=False,
 				python_callable=update_last_device_down,
@@ -655,8 +659,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 		aggregate_sv_tasks[db_name] = aggregate_sv_data_task
 		aggregate_nw_smptt_tasks[db_name] = aggregate_smptt_task
 		aggregate_smptt_task >> update_refer
-		if not debug_mode:
-			aggregate_smptt_task >> update_last_device_down_task
+		aggregate_smptt_task >> update_last_device_down_task
 
 	try:
 		result_nw_memc_key = []
@@ -676,6 +679,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 				dag=dag_subdag_format
 				)
 				event_site_tasks[site] = event_nw
+
 				event_nw >> aggregate_nw_smptt_tasks.get(machine)
 
 			if site not in network_format_sensor_dict.keys():
