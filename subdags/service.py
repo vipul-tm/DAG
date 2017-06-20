@@ -125,7 +125,9 @@ def service_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 		logging.info("Service Slot created in redis -> " + str(len(device_slot_data)))		
 		for slot in device_slot_data:
 			redis_hook_4.rpush("sv_"+site_name+"_slot_"+str(i),slot)
+			logging.info("Pushing %s"%("sv_"+site_name+"_slot_"+str(i)))
 			i+=1
+		Variable.set("sv_%s_slots"%(site_name),str(len(device_slot_data)))
 
 	for machine in config:
 		for site in machine.get('sites'):

@@ -114,8 +114,8 @@ def init_etl():
 	#	print ("clearing sv_%s"%db)OC
 	#	memc_con.set("sv_%s"%db,"")
 	#	memc_con.set("nw_%s"%db,"")
-	Variable.set('service_memc_key',"")
-	Variable.set('network_memc_key',"")
+	#Variable.set('service_memc_key',"")
+	#Variable.set('network_memc_key',"")
 
 	logging.info("Flushed all in redis_hook_4 connection")
 	logging.info("All Variables Found")	

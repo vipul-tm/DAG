@@ -13,6 +13,7 @@ from subdags.format_utility import backtrack_x_min
 from subdags.events_utility import get_device_alarm_tuple
 from subdags.events_utility import update_device_state_values
 from subdags.events_utility import update_last_device_down
+from airflow.operators import ExternalTaskSensor
 import json
 import logging
 import traceback
@@ -53,7 +54,7 @@ all_devices_states_rta = get_previous_device_states(redis_hook_5,"rta")
 redis_hook_network_alarms = RedisHook(redis_conn_id="redis_hook_network_alarms")
 event_rules = eval(Variable.get('event_rules'))
 operators = eval(Variable.get('operators')) #get operator Dict from 
-
+config = eval(Variable.get("system_config"))
 result_nw_memc_key = []
 result_sv_memc_key = []
 HEADER = '\033[95m'
@@ -75,7 +76,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 	service_slots.extend(redis_hook_4.get_keys("sv_vrfprv*"))
 	network_slots.extend(redis_hook_4.get_keys("nw_pub*")) #TODO: very bad approach to get pub and vrf daata
 	service_slots.extend(redis_hook_4.get_keys("sv_pub*"))
-
+	logging.info("****Calling Format ETL Subdag****")
 	temp_dir_path = ""
 	
 	dag_subdag_format = DAG(
@@ -460,8 +461,11 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 			#create_file_and_write_data(redis_queue_slot+"_result",str(service_list)) #TODO: Here file is overwritten and no record is maintened it is to be discussed
 			json_obj = json.dumps(service_list)
 			logging.info("About to dump data to Redis of size(JSON) of Service : KB -" + str(sys.getsizeof(json_obj)/1024 ))
-			redis_hook_4.rpush(str(redis_queue_slot)+"_result",service_list)			
-			logging.info("Successfully Inserted data to redis KEY :"+redis_queue_slot+"_result of length "+str(len(service_list)))
+			if len(json_obj) > 0 :
+				redis_hook_4.rpush(str(redis_queue_slot)+"_result",service_list)			
+				logging.info("Successfully Inserted data to redis KEY :"+redis_queue_slot+"_result of length "+str(len(service_list)))
+			else:
+				logging.info("0 Len data recieved after processing omitting ALL")
 		except Exception:
 			logging.info("Unable to Wite to redis key created")
 			traceback.print_exc()
@@ -507,6 +511,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 	def aggregate_sv_data(**kwargs):
 		logging.info("Aggregating Service Data")
 		sv_memc_keys = eval(Variable.get("service_memc_key"))
+		print Variable.get("service_memc_key"),type(Variable.get("service_memc_key"))
 		task_for_machine=kwargs.get('task_instance_key_str').split("_")[3]
 
 		sv_data = {}
@@ -529,12 +534,13 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 			for sv_memc_keys in sv_data:
 				logging.info("About to dump data to Memcache of size of Service : " + str(sys.getsizeof(sv_data)))
 				json_obj = json.dumps(sv_data)
-				logging.info("About to dump data to Redis of size(JSON) of Service : " + str(sys.getsizeof(json_obj)) + "sv_agg_nocout_"+str(sv_memc_keys))
+				logging.info("About to dump data to Redis of size(JSON) of Service :(SIZE) " + str(sys.getsizeof(json_obj)) + " (NAME) sv_agg_nocout_"+str(sv_memc_keys))
 				redis_hook_4.rpush("sv_agg_nocout_"+str(sv_memc_keys),sv_data.get(sv_memc_keys))
 				logging.info("Inserted data in redis")
 				return True
 		except Exception:
 			logging.error("Unable to put in the combined service data to memcache.")
+			traceback.print_exc()
 			return False
 #this function is used to get all the slots and then combine their data into one site data
 	def extract_and_distribute_nw(**kwargs):
@@ -595,6 +601,8 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 	aggregate_sv_tasks={}
 	aggregate_nw_smptt_tasks = {}
 	event_site_tasks = {}
+	service_format_sensor_dict = {}
+	network_format_sensor_dict = {}
 
 	update_refer = PythonOperator(
 				task_id="update_device_states",
@@ -668,6 +676,27 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 				event_site_tasks[site] = event_nw
 				event_nw >> aggregate_nw_smptt_tasks.get(machine)
 
+			if site not in network_format_sensor_dict.keys():
+				network_format_task_sensor =  ExternalTaskSensor( #here task for the same site could be made more than once but it get overriden at the end
+			    external_dag_id="ETL.NETWORK",
+			    external_task_id="Network_extract_%s"%site,
+			    task_id="sense_nw_%s_extract_task"%site,
+			    poke_interval =2,
+			    #sla=timedelta(minutes=1),
+			    dag=dag_subdag_format
+			    )
+				network_format_sensor_dict[site] = network_format_task_sensor
+
+			if site not in service_format_sensor_dict.keys():
+				service_format_task_sensor =  ExternalTaskSensor( #here task for the same site could be made more than once but it get overriden at the end
+			    external_dag_id="ETL.SERVICE",
+			    external_task_id="Service_extract_%s"%site,
+			    task_id="sense_sv_%s_extract_task"%site,
+			    poke_interval =2,
+			    #sla=timedelta(minutes=1),
+			    dag=dag_subdag_format
+			    )
+				service_format_sensor_dict[site] = service_format_task_sensor
 
 		
 		for redis_key in network_slots:
@@ -677,6 +706,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 
 			task_name =  redis_key.split("_")
 			site = "_".join(task_name[1:4])
+			
 			machine = task_name[1]
 			result_list = redis_key.split("_")
 
@@ -693,11 +723,15 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 				#params={"previous_all_device_states":previous_all_device_states},
 				dag=dag_subdag_format
 				)
-			#this tasks calculate all tab alarms
+			try:
+				 network_format_sensor_dict.get(site) >> network_tasks1
+			except Exception:
+				logging.info("Unable to attach sensor to %s"%site)
+
 			network_tasks1 >> event_site_tasks.get(site)
 			try:
 				
-				network_tasks1 >> aggregate_nw_tasks.get(machine)
+				 network_tasks1 >> aggregate_nw_tasks.get(machine)  
 			except Exception:
 				logging.error("Unable to find the task with dependency.")
 		
@@ -708,35 +742,42 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 
 	try:
 		result_sv_memc_key=[]
-		for redis_key in service_slots:
-			if not redis_key or "_result" in redis_key:
-				continue
+		for machine in config:
+			sites = machine.get('sites')		
 
-			task_name = redis_key.split("_")
-			machine = task_name[1]
-			result_list = redis_key.split("_")
+			for site in sites:
+				site_name = site.get('name')
+				total_slot = int(Variable.get("sv_%s_slots"%(site_name)))
+				#machine_name = machine.get("Name")
+				machine_name = site_name.split("_")[0]
+				
+				for slot in range(1,total_slot+1):
 
-			task_name.append("format")
-			result_list.append("result")
+					task = ("sv_%s_slot_%s"%(site_name,slot))
+					task_name = task.split("_")
+					result_list = task.split("_")
 
-			result_sv_memc_key.append("_".join(result_list))
+					task_name.append("format")
+					result_list.append("result")
 
-			name = "_".join(task_name)
-			
-			service_tasks = PythonOperator(
-				task_id="%s"%name,
-				provide_context=True,
-				python_callable=service_format,
-				#params={"ip":machine.get('ip'),"port":site.get('port')},
-				dag=dag_subdag_format
-				)
-			service_tasks >> aggregate_sv_tasks.get(machine)
-		
+					result_sv_memc_key.append("_".join(result_list))
+
+					name = "_".join(task_name)
+					service_tasks = PythonOperator(
+						task_id="%s"%name,
+						provide_context=True,
+						python_callable=service_format,
+						#params={"ip":machine.get('ip'),"port":site.get('port')},
+						dag=dag_subdag_format
+						)				
+					service_format_sensor_dict.get(site_name) >> service_tasks
+					service_tasks >> aggregate_sv_tasks.get(machine_name)
+
 		
 		Variable.set("service_memc_key",str(result_sv_memc_key))
 	except Exception:
 		logging.error("There is an error while create format tasks for Service data")
-
+		traceback.print_exc()
 
 	
 	return 	dag_subdag_format

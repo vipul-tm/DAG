@@ -29,6 +29,7 @@ default_args = {
     'retry_delay': timedelta(minutes=1),
     'catchup': False,
     'provide_context': True,
+    'sla' : timedelta(minutes=5)
     # 'queue': 'bash_queue',
     # 'pool': 'backfill',
     # 'priority_weight': 10,
@@ -42,8 +43,8 @@ CHILD_DAG_NAME_SERVICE = "SERVICE"
 CHILD_DAG_NAME_EVENTS = "EVENTS" 
 CHILD_DAG_NAME_TOPOLOGY="TOPOLOGY"
 CHILD_DAG_NAME_DEVICE_DOWN="DEVICE_DOWN"
-NW_DB_COLUMNS = "machine_name,current_value,service_name,avg_value,max_value,age,min_value,site_name,data_source,critical_threshold,device_name,severity,sys_timestamp,ip_address,warning_threshold,check_timestamp,refer"
-SV_DB_COLUMNS = "machine_name,severity,service_name,avg_value,max_value,age,min_value,site_name,data_source,critical_threshold,device_name,current_value,sys_timestamp,ip_address,warning_threshold,check_timestamp,refer"
+NW_DB_COLUMNS = "machine_name,current_value,service_name,avg_value,max_value,age,min_value,site_name,warning_threshold,critical_threshold,device_name,sys_timestamp,refer,ip_address,data_source,check_timestamp,severity"
+SV_DB_COLUMNS = "machine_name,site_name,critical_threshold,device_name,ip_address,data_source,current_value,check_timestamp,severity,service_name,age,sys_timestamp,warning_threshold,refer,avg_value,max_value,min_value"
 
 CHILD_DAG_NAME_FORMAT = "FORMAT"
 main_etl_dag=DAG(dag_id=PARENT_DAG_NAME, default_args=default_args, schedule_interval='*/5 * * * *',)
@@ -143,7 +144,7 @@ for db in databases:
     dag=main_etl_dag,
     mysql_table="performance_performanceservice",
     memc_key="sv_agg_"+str(db),
-    exec_type = 0,
+    exec_type = 1,
     sql=query_sv,
     db_coloumns=SV_DB_COLUMNS,
     trigger_rule = 'all_done'
@@ -154,7 +155,7 @@ for db in databases:
     dag=main_etl_dag,
     mysql_table="performance_performancenetwork",
     memc_key="nw_agg_"+str(db),
-    exec_type = 0,
+    exec_type = 1,
     sql=query_nw,
     db_coloumns = NW_DB_COLUMNS,
     trigger_rule = 'all_done'
@@ -165,7 +166,7 @@ for db in databases:
     dag=main_etl_dag,
     mysql_table="performance_networkstatus",
     memc_key="nw_agg_"+str(db),
-    exec_type = 0,
+    exec_type = 1,
     sql=query_nw_update,
     update = True,
     db_coloumns = NW_DB_COLUMNS,
@@ -178,7 +179,7 @@ for db in databases:
     dag=main_etl_dag,
     mysql_table="performance_servicestatus",
     memc_key="sv_agg_"+str(db),
-    exec_type = 0,
+    exec_type = 1,
     sql=query_sv_update,
     update = True,
     db_coloumns = SV_DB_COLUMNS,
@@ -217,7 +218,7 @@ device_down_etl >> service_etl
 #device_down_etl >> topology_etl
 initiate_etl >> network_etl
 initiate_etl >> get_static_data
-network_etl >> format_etl
-service_etl >> format_etl
+initiate_etl >> format_etl
+
 get_static_data >> format_etl
 #format_etl >> events
