@@ -603,7 +603,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 	event_site_tasks = {}
 	service_format_sensor_dict = {}
 	network_format_sensor_dict = {}
-
+	debug_mode = eval(Variable.get("debug_mode"))
 	update_refer = PythonOperator(
 				task_id="update_device_states",
 				provide_context=False,
@@ -613,7 +613,8 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 	
 				dag=dag_subdag_format
 				)
-	update_last_device_down_task = PythonOperator(
+	if not debug_mode:
+		update_last_device_down_task = PythonOperator(
 				task_id="update_last_device_down",
 				provide_context=False,
 				python_callable=update_last_device_down,
@@ -654,7 +655,8 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 		aggregate_sv_tasks[db_name] = aggregate_sv_data_task
 		aggregate_nw_smptt_tasks[db_name] = aggregate_smptt_task
 		aggregate_smptt_task >> update_refer
-		aggregate_smptt_task >> update_last_device_down_task
+		if not debug_mode:
+			aggregate_smptt_task >> update_last_device_down_task
 
 	try:
 		result_nw_memc_key = []

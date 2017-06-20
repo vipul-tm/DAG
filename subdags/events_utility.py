@@ -55,6 +55,7 @@ def get_device_alarm_tuple(network_data,event_rules):
 				device_events = event_rules.get(event_rules_key)
 				previous_event = device_events.get(prev_state).get('event-name')
 				current_event = device_events.get(severity).get('event-name')
+				mat_severity = device_events.get(severity).get('mat_severity')
 			except Exception:
 				logging.error(OKGREEN+"problem in fetching the data for the device"+ event_rules_key+NC)
 				traceback.print_exc()
@@ -63,7 +64,7 @@ def get_device_alarm_tuple(network_data,event_rules):
 				trap =('',previous_event , '',ip_address,
 							'',
 							device_type,
-							'clear',
+							mat_severity,
 							'',
 							 time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(local_timestamp)), #check_time,
 							''
@@ -84,7 +85,7 @@ def get_device_alarm_tuple(network_data,event_rules):
 				trap_current = ('', current_event, '',ip_address,
 					 				'',
 					 				device_type,
-					 				severity,
+					 				mat_severity,
 					 				'',
 									time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(float(local_timestamp))),
 					 				''
