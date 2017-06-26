@@ -8,6 +8,9 @@ import logging
 import itertools
 import traceback
 import socket
+from  etl_tasks_functions import get_time
+from  etl_tasks_functions import subtract_time
+
 default_args = {
     'owner': 'wireless',
     'depends_on_past': False,
@@ -78,6 +81,7 @@ def service_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 		return output
 
 	def extract_and_distribute(**kwargs):
+		st = get_time()
 		try:
 			service_query = Variable.get('service_query') #to get LQL to extract service
 			device_slot = Variable.get("device_slot_service") #the number of devices to be made into 1 slot
@@ -108,8 +112,9 @@ def service_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
                             "Or: 14\nNegate:\nOutputFormat: python\n"
 
 		try:
-				
+			start_time = get_time()
 			service_data = eval(get_from_socket(site_name, service_query,site_ip,site_port))
+			logging.info("Fetch Time %s"%subtract_time(start_time))
 			#for x in service_data:
 			#	 if x[1] == '10.175.161.2':
 			#		print x
@@ -128,6 +133,7 @@ def service_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 			logging.info("Pushing %s"%("sv_"+site_name+"_slot_"+str(i)))
 			i+=1
 		Variable.set("sv_%s_slots"%(site_name),str(len(device_slot_data)))
+		logging.info("Total Time %s"%subtract_time(st))
 
 	for machine in config:
 		for site in machine.get('sites'):

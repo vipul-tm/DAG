@@ -14,6 +14,7 @@ from etl_tasks_functions import init_etl
 from etl_tasks_functions import debug_etl
 from airflow.operators import ExternalTaskSensor
 from airflow.operators import MemcToMySqlOperator
+from celery.signals import task_prerun, task_postrun
 
 #TODO: Commenting Optimize
 #######################################DAG CONFIG####################################################################################################################
@@ -222,3 +223,20 @@ initiate_etl >> format_etl
 
 get_static_data >> format_etl
 #format_etl >> events
+
+
+############################################DEBUGGERS###################################################################################################
+# d = {}
+
+# @task_prerun.connect
+# def task_prerun_handler(signal, sender, task_id, task, args, kwargs):
+#     d[task_id] = time()
+
+
+# @task_postrun.connect
+# def task_postrun_handler(signal, sender, task_id, task, args, kwargs, retval, state):
+#     try:
+#         cost = time() - d.pop(task_id)
+#     except KeyError:
+#         cost = -1
+#     print task.__name__ + ' ' + str(cost)

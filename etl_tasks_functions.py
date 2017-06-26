@@ -6,6 +6,7 @@ from airflow.hooks import  MemcacheHook
 import socket
 import logging
 import csv #for debugging task
+import time
 SQLhook=MySqlHook(mysql_conn_id='application_db')
 redis_hook_4 = RedisHook(redis_conn_id="redis_hook_4")
 #redis_hook_5 = RedisHook(redis_conn_id="redis_hook_5")
@@ -236,3 +237,9 @@ def debug_etl():
 				except UnicodeEncodeError:
 					continue
 		file.close()
+def get_time():
+	return time.time()
+
+def subtract_time(start_time):
+	diff_time = time.time() - start_time 
+	return int(diff_time)
