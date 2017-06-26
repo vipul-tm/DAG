@@ -1,0 +1,4 @@
+.git
+exclude.txt
+README.md
+LICENSE
