@@ -7,6 +7,8 @@ from airflow.models import Variable
 from airflow.hooks import  MemcacheHook
 from subdags.format_utility import get_previous_device_states
 from subdags.format_utility import create_device_state_data
+from  etl_tasks_functions import get_time
+from  etl_tasks_functions import subtract_time
 import logging
 import itertools
 import socket
@@ -44,6 +46,7 @@ def network_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
     		dag_id="%s.%s" % (parent_dag_name, child_dag_name),
     		schedule_interval=schedule_interval,
     		start_date=start_date,
+    		
   		)
 	#TODO: Create hook for using socket with Pool
 	#TODO: make this common
@@ -100,7 +103,9 @@ def network_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 		logging.info("Extracting data for site"+str(site_name)+"@"+str(site_ip)+" port "+str(site_port))
 		network_data = []
 		try:
+			start_time = get_time()
 			network_data = eval(get_from_socket(site_name, network_query,site_ip,site_port))
+			logging.info("Time to get Data from Poller is %s"%subtract_time(start_time))
 		except Exception:
 			logging.error("Unable to get Network Data")
 			traceback.print_exc()

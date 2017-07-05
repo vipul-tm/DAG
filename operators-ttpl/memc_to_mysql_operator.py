@@ -146,7 +146,7 @@ class MemcToMySqlOperator(BaseOperator):
 								new_slot.append(device.copy())
 							conn = hook.get_conn()
 							cursor = conn.cursor()
-							logging.info("We are about to upload %s service in total ."%len(new_data))
+							logging.info("We are about to upload %s service in total .for check time %s and Local Time %s"%(len(new_data),new_data[0].get('check_timestamp'),new_data[0].get('local_timestamp')))
 							try:
 									cursor.executemany(self.sql, new_slot)
 									logging.info("Successfully executed Query")

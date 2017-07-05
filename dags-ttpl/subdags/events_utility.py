@@ -130,8 +130,7 @@ def update_last_device_down(redis_hook=redis_hook_4):
 						else:
 							new_all_devices_down_states[new_host] = {'state':old_state,'since':old_refer}
 					except Exception:
-						traceback.print_exc()
-						logging.warning("Unable to find host in old state for host %s " %new_host)
+						logging.warning("Unable to find host %s in old state for host " %new_host)
 						new_all_devices_down_states[new_host] = {'state':new_state,'since':new_refer}
 						logging.warning("Created new sate dict for %s as severity %s and since %s"%(new_host,new_state,new_refer))
 	try:
@@ -149,10 +148,8 @@ def update_device_state_values(redis_hook=redis_hook_4):
 		logging.info("We get all the devices and compare what all states have changed")
 		old_states_pl = get_previous_device_states(redis_hook_5)
 		old_states_rta = get_previous_device_states(redis_hook_5,"rta")
-		
+	
 
-		new_states_pl = {}
-		new_states_rta = {}
 		aggregated_data_vals = list(redis_hook.get_keys("nw_agg_nocout_*"))
 
 		for key in aggregated_data_vals:
@@ -200,6 +197,8 @@ def update_device_state_values(redis_hook=redis_hook_4):
 							#logging.info("State is same for %s as %s"%(new_host,old_state))
 						except Exception:
 							logging.info("Unable to find host in old state for host %s"%new_host)
+							logging.info(new_refer)
+							logging.info(new_sev)
 							old_states[new_host] = {'state':new_sev,'since':new_refer}
 							logging.info("Created new sate dict for %s as severity %s and since %s"%(new_host,new_sev,new_refer))
 							continue
@@ -210,9 +209,15 @@ def update_device_state_values(redis_hook=redis_hook_4):
 
 					
 		try:				
-			logging.info("PL State: %s RTA states : %s"%(len(new_states_pl),len(new_states_rta)))
-			redis_hook_5.set("all_devices_state",str(old_states_pl))
-			redis_hook_5.set("all_devices_state_rta",str(old_states_rta))	
+			logging.info("PL State: %s RTA states : %s"%(len(old_states_pl),len(old_states_rta)))
+			if old_states_pl != None and len(old_states_pl) > 0:
+				redis_hook_5.set("all_devices_state",str(old_states_pl))
+				logging.info("Succeessfully Updated PL DS last state")
+			if old_states_rta != None and len(old_states_rta) > 0:
+				redis_hook_5.set("all_devices_state_rta",str(old_states_rta))
+				logging.info("Succeessfully Updated RTA DS last state")
+			else:
+				logging.info("recieved fucking None")	
 		except Exception:
 			logging.error("Unable to actually insert te updated data into redis")
 

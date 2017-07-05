@@ -86,4 +86,48 @@ class RedisHook(BaseHook):
 	   conn = self.get_conn()
 	   return conn.hgetall(key)
 	   conn.connection_pool.disconnect()
-	
+
+	def add_event_by_key(conn, identifier, events, index_keys={"search_key":"timestamp"}):
+		"""
+			This function is used to add the list of distionary into the Redis and index the data based on the dict key provided
+
+		"""
+		pipe = conn.pipeline(True)
+		for event in events:
+			id_redis = conn.incr('%s:id'%(identifier))
+			event['id'] = id_redis
+			event_key = '%s:%s'%(identifier,id_redis)
+			pipe.hmset(event_key, event)
+			#pipe.zadd(identifier,id_redis,event['timestamp'])
+			for index_key in index_keys:
+				pipe.zadd(index_key,event[index_keys[index_key]],id_redis)
+		pipe.execute()
+		return True
+
+	def get_event_by_key(conn,identifier,index_keys,start_time,end_time):
+		"""
+			This function is used to get data from the specified identifier and key
+		"""
+		pipe = conn.pipeline(True)
+
+
+	def add_event(conn,measurement_name,time,value):
+		"""
+		Add measurement metrics into redis db with timestamp labeled on them 
+
+		"""
+		try:
+		    conn.zadd(measurement_name,time,value)
+		    return True
+		except Exception,e:
+		    print e
+	def get_event(conn,measurement_name,start_time,end_time):
+		"""
+		Get measurement metrics into redis db with timestamp labeled on them 
+
+		"""
+		try:
+		    data = conn.zrangebyscore(measurement_name,start_time,end_time)
+		    return data
+		except Exception,e:
+		    print e

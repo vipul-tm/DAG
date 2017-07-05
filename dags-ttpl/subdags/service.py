@@ -10,7 +10,7 @@ import traceback
 import socket
 from  etl_tasks_functions import get_time
 from  etl_tasks_functions import subtract_time
-
+import time 
 default_args = {
     'owner': 'wireless',
     'depends_on_past': False,
@@ -39,6 +39,7 @@ def service_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
     		dag_id="%s.%s" % (parent_dag_name, child_dag_name),
     		schedule_interval=schedule_interval,
     		start_date=start_date,
+    		
   		)
 
 	#TODO: Create hook for using socket with Pool
@@ -80,8 +81,9 @@ def service_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 
 		return output
 
-	def extract_and_distribute(**kwargs):
+	def extract_and_distribute(*args,**kwargs):
 		st = get_time()
+		print kwargs,args
 		try:
 			service_query = Variable.get('service_query') #to get LQL to extract service
 			device_slot = Variable.get("device_slot_service") #the number of devices to be made into 1 slot
@@ -93,7 +95,9 @@ def service_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 
 		task_site = kwargs.get('task_instance_key_str').split('_')[4:7]
 		site_name = "_".join(task_site)
-		
+		start_time = int(Variable.get("data_service_extracted_till"))
+		end_time = int(time.time())
+
 		service_query =  "GET services\nColumns: host_name host_address service_description service_state "+\
                             "last_check service_last_state_change host_state service_perf_data\nFilter: service_description ~ _invent\n"+\
                             "Filter: service_description ~ _status\n"+\
@@ -109,12 +113,17 @@ def service_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
                             "Filter: service_description ~ mrotek_port_values\n"+\
                             "Filter: service_description ~ rici_port_values\n"+\
                             "Filter: service_description ~ rad5k_topology_discover\n"+\
-                            "Or: 14\nNegate:\nOutputFormat: python\n"
+                            "Or: 14\nNegate:\n"+\
+                            "Filter: last_check >= %s\n" % start_time+\
+                         	"Filter: last_check < %s\n" % end_time+\
+                            "OutputFormat: python\n"
 
 		try:
 			start_time = get_time()
 			service_data = eval(get_from_socket(site_name, service_query,site_ip,site_port))
+			print service_query
 			logging.info("Fetch Time %s"%subtract_time(start_time))
+			Variable.set("data_service_extracted_till",end_time)
 			#for x in service_data:
 			#	 if x[1] == '10.175.161.2':
 			#		print x

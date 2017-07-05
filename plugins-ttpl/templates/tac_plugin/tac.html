@@ -30,6 +30,8 @@
     <li id ="ex"><a href="#extractors">extractors</a></li>
     <li id = "lo" ><a href="#loaders">loaders</a></li>
     <li id="tr" ><a href="#transformers">Transformers</a></li>
+    <li id="hk" ><a href="#hooks">Hooks</a></li>
+    <li id="sn" ><a href="#sensors">Sensors</a></li>
   </ul>
   <div id="extractors">
    
@@ -48,6 +50,20 @@
   <div id="transformers">
    
     <table class="table table-striped table-bordered"  id="transformerAccordion">
+                <thead></thead>
+                <tbody></tbody>
+    </table>
+</div> 
+  <div id="hooks">
+   
+    <table class="table table-striped table-bordered"  id="hooksAccordion">
+                <thead></thead>
+                <tbody></tbody>
+    </table>
+</div> 
+  <div id="sensors">
+   
+    <table class="table table-striped table-bordered"  id="sensorsAccordion">
                 <thead></thead>
                 <tbody></tbody>
     </table>
@@ -113,15 +129,44 @@
                     "pageLength": 50
 
         });
+       hooks_table = $("#hooksAccordion").dataTable({
+                    "aoColumns": [
+                        { "mData": "name", 'sTitle': 'Name', 'sWidth': '10%', 'bSortable': true },
+                        { "mData": "type", 'sTitle': 'Type', 'sWidth': '10%', 'bSortable': true },
+                        { "mData": "args", 'sTitle': 'arguments', 'sWidth': '20%', 'bSortable': true},
+                        { "mData": "desc", 'sTitle': 'description', 'sWidth': '50%', 'bSortable': true},
+                        { "mData": "loc", 'sTitle': 'Location', 'sWidth': '10%', 'bSortable': true},
+                       
+                   ],
+                   "sScrollY": "500px",
+                   "bPaginate": true,
+                    "pageLength": 50
+
+        });
+       sensors_table = $("#sensorsAccordion").dataTable({
+                    "aoColumns": [
+                        { "mData": "name", 'sTitle': 'Name', 'sWidth': '10%', 'bSortable': true },
+                        { "mData": "type", 'sTitle': 'Type', 'sWidth': '10%', 'bSortable': true },
+                        { "mData": "args", 'sTitle': 'arguments', 'sWidth': '20%', 'bSortable': true},
+                        { "mData": "desc", 'sTitle': 'description', 'sWidth': '50%', 'bSortable': true},
+                        { "mData": "loc", 'sTitle': 'Location', 'sWidth': '10%', 'bSortable': true},
+                       
+                   ],
+                   "sScrollY": "500px",
+                   "bPaginate": true,
+                    "pageLength": 50
+
+        });
 
 
      var data = {{ data_table| tojson|safe }}
      extractors = []
      transformers = []
      loaders = []
-
+     hooks = []
+     sensors = []
      for (var imported_file in data){
-      console.log(data[imported_file]['module'])
+      console.log(data[imported_file]['type'])
       if (data[imported_file]['module'] == "extractor"){
         extractors.push(data[imported_file]);
       }
@@ -135,16 +180,29 @@
      else{
       console.log("ERROR while populating table,the file name is not correct kindly refer Documentation with rule name [file Name convention ]")
      }
+      if (data[imported_file]['type'] == "hook"){
+        console.log("Here")
+        hooks.push(data[imported_file]);
+     }
+     if (data[imported_file]['type'] == "sensor"){
+        sensors.push(data[imported_file]);
+     }
    }
      
      operator_table_extractor.fnAddData(extractors);
      operator_table_transformer.fnAddData(transformers);
      operator_table_loader.fnAddData(loaders);
+     hooks_table.fnAddData(hooks);
+     sensors_table.fnAddData(sensors);
 
 
    });
 
-
+  function changeHeadersCss(){
+    $("table").css("width","100%")
+    $("table").parent().css("width","100%")
+  }
+  window.onload = changeHeadersCss
   </script>
 {% endblock %}
 

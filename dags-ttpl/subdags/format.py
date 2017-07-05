@@ -56,6 +56,7 @@ event_rules = eval(Variable.get('event_rules'))
 operators = eval(Variable.get('operators')) #get operator Dict from 
 config = eval(Variable.get("system_config"))
 debug_mode = eval(Variable.get("debug_mode"))
+
 result_nw_memc_key = []
 result_sv_memc_key = []
 HEADER = '\033[95m'
@@ -212,7 +213,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 				logging.info("Error while updating refer")
 		else:
 			try:
-				logging.info("LEN of DICT: %s HOST : %s"%(len(all_down_devices_states),hostname))
+				#logging.info("HOST : %s"%(len(all_down_devices_states),hostname))
 				if all_down_devices_states.get(hostname).get('since') != None:
 					since_time =  all_down_devices_states.get(hostname).get('since')
 					return since_time
@@ -236,8 +237,12 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 			device_state = previous_device_state.get(hostname)
 			if device_state.get("state") == current_sev:
 				age = device_state.get("since")
+
 				if age != None and age != '':
-					return device_state.get("since")
+					if age == 'None':
+						return current_time
+					else:
+						return device_state.get("since")
 				else:
 					logging.info("Got the devices %s but unable to fetch the since key "%(hostname))
 					return 'unknown'
@@ -253,6 +258,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 ###########################################################------------NETWORK--------------- ##################################################
 	def network_format(**kwargs):
 		print "In Network Format"
+		device_to_be_converted_down =eval(Variable.get("device_converted_down"))
 		redis_queue_slot=kwargs.get('task_instance_key_str').split("_")[2:-3]
 		
 		all_down_devices_states = get_previous_device_states(redis_hook_5,"down")
@@ -317,15 +323,29 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 			network_dict['machine_name'] =  redis_queue_slot.split("_")[1]
 			#print slot[0]
 			#print device_type
+			
+
 			for data_source in threshold_values:
 				
 
 				if data_source in exclude_network_datasource:
 					continue
+				if network_dict['ip_address'] ==  '10.172.241.24':
+					logging.info("Evaluating for %s"%(network_dict['ip_address']))
 
 				value = threshold_values.get(data_source).get("cur")
-				key=str(device_type+"_"+data_source)				
-				network_dict['severity'] =calculate_severity(key,value,host_state,data_source)
+				key=str(device_type+"_"+data_source)
+
+				if float(value) == 100:
+					host_state = "down"
+				else:
+					host_state = "up"
+
+				if network_dict['ip_address'] in device_to_be_converted_down:
+					network_dict['severity'] ="down"
+				else:
+					network_dict['severity'] =calculate_severity(key,value,host_state,data_source)
+					
 				network_dict['ds'] = data_source
 				network_dict['cur'] = value
 				network_dict['war'] = threshold_values[data_source].get('war') if threshold_values[data_source].get('war') else ''
@@ -563,7 +583,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 				if len(network_data) > 0:
 					all_pl_rta_trap_dict.get(site).extend(get_device_alarm_tuple(network_data,event_rules))  #TODO: Imporove args
 				else:
-					logging.info("No Data Found in redis")
+					logging.info("No Data Found in redis at key: %s"%(redis_key+"_result"))
 		logging.info("TIME : %s"%(time.time() - start_time))
 		start_time = time.time()
 		
@@ -571,6 +591,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 			redis_key = 'network_smptt_%s' % site
 			try:
 				redis_hook_4.rpush(redis_key,all_pl_rta_trap_dict.get(site))
+				logging.info("successfully inserted data into key : %s"%(redis_key))
 							
 			except Exception:
 				logging.error("Unable to insert data to redis.")

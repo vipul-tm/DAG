@@ -76,6 +76,6 @@ service_perf_query = "GET services\nColumns: host_name host_address service_desc
 q3 = "GET services\nColumns: host_name host_address host_state service_description service_state plugin_output\n" + \
                 "Filter: service_description = wimax_topology\nOutputFormat: json\n"
 site_name = 'ospf1_slave_1'
-nw_qry_output = eval(get_from_socket(site_name, q3)) 
+nw_qry_output = eval(get_from_socket(site_name, service_perf_query)) 
 print nw_qry_output[0]
 
