@@ -11,6 +11,7 @@ from airflow.hooks import MySqlHook
 from airflow.hooks import RedisHook
 from airflow.models import Variable
 
+
 class MemcToMySqlOperator(BaseOperator):
 	"""
 	transfers memc data to specific mysql table
@@ -46,6 +47,7 @@ class MemcToMySqlOperator(BaseOperator):
 		self.db = "_".join(memc_key.split("_")[2:4])
 	def execute(self, context):
 		debug_mode = eval(Variable.get("debug_mode"))
+		
 		if not debug_mode:
 			start_main = time.time()
 			
@@ -146,7 +148,7 @@ class MemcToMySqlOperator(BaseOperator):
 								new_slot.append(device.copy())
 							conn = hook.get_conn()
 							cursor = conn.cursor()
-							logging.info("We are about to upload %s service in total .for check time %s and Local Time %s"%(len(new_data),new_data[0].get('check_timestamp'),new_data[0].get('local_timestamp')))
+							logging.info("We are about to upload %s service in total .for check time %s and Local Time %s"%(len(new_slot),new_slot[0].get('check_timestamp'),new_slot[0].get('local_timestamp')))
 							try:
 									cursor.executemany(self.sql, new_slot)
 									logging.info("Successfully executed Query")
@@ -195,7 +197,7 @@ class MemcToMySqlOperator(BaseOperator):
 					   		cursor = conn.cursor()
 							start_many = time.time()
 
-							logging.info("We are about to update %s devices in total ."%len(new_data))
+							logging.info("We are about to update %s devices in total ."%len(new_slot))
 
 							try:
 									cursor.executemany(self.sql,new_slot)
@@ -204,7 +206,7 @@ class MemcToMySqlOperator(BaseOperator):
 									logging.info("Met Exception")
 									traceback.print_exc()
 
-							logging.info("We are about to update %s devices in total ."%len(new_data))
+							logging.info("We are about to update %s devices in total ."%len(new_slot))
 							conn.commit()
 							cursor.close()
 							conn.close()

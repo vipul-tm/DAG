@@ -22,7 +22,7 @@ from celery.signals import task_prerun, task_postrun
 default_args = {
     'owner': 'wireless',
     'depends_on_past': False,
-    'start_date': datetime.now() - timedelta(minutes=5),
+    'start_date': datetime.now() - timedelta(minutes=4),
     #'email': ['vipulsharma144@gmail.com'],
     'email_on_failure': False,
     'email_on_retry': False,
@@ -30,7 +30,7 @@ default_args = {
     'retry_delay': timedelta(minutes=1),
     'catchup': False,
     'provide_context': True,
-    'sla' : timedelta(minutes=5)
+    # 'sla' : timedelta(minutes=2)
     # 'queue': 'bash_queue',
     # 'pool': 'backfill',
     # 'priority_weight': 10,
@@ -48,7 +48,7 @@ NW_DB_COLUMNS = "machine_name,current_value,service_name,avg_value,max_value,age
 SV_DB_COLUMNS = "machine_name,site_name,critical_threshold,device_name,ip_address,data_source,current_value,check_timestamp,severity,service_name,age,sys_timestamp,warning_threshold,refer,avg_value,max_value,min_value"
 
 CHILD_DAG_NAME_FORMAT = "FORMAT"
-main_etl_dag=DAG(dag_id=PARENT_DAG_NAME, default_args=default_args, schedule_interval='*/5 * * * *',)
+main_etl_dag=DAG(dag_id=PARENT_DAG_NAME, default_args=default_args, schedule_interval='*/4 * * * *',)
 system_config=eval(Variable.get('system_config'))
 databases=eval(Variable.get('databases'))
 debug_mode = eval(Variable.get("debug_mode"))
@@ -145,7 +145,7 @@ for db in databases:
     dag=main_etl_dag,
     mysql_table="performance_performanceservice",
     memc_key="sv_agg_"+str(db),
-    exec_type = 1,
+    exec_type = 0,
     sql=query_sv,
     db_coloumns=SV_DB_COLUMNS,
     trigger_rule = 'all_done'
@@ -156,7 +156,7 @@ for db in databases:
     dag=main_etl_dag,
     mysql_table="performance_performancenetwork",
     memc_key="nw_agg_"+str(db),
-    exec_type = 1,
+    exec_type = 0,
     sql=query_nw,
     db_coloumns = NW_DB_COLUMNS,
     trigger_rule = 'all_done'
@@ -167,7 +167,7 @@ for db in databases:
     dag=main_etl_dag,
     mysql_table="performance_networkstatus",
     memc_key="nw_agg_"+str(db),
-    exec_type = 1,
+    exec_type = 0,
     sql=query_nw_update,
     update = True,
     db_coloumns = NW_DB_COLUMNS,
@@ -180,7 +180,7 @@ for db in databases:
     dag=main_etl_dag,
     mysql_table="performance_servicestatus",
     memc_key="sv_agg_"+str(db),
-    exec_type = 1,
+    exec_type = 0,
     sql=query_sv_update,
     update = True,
     db_coloumns = SV_DB_COLUMNS,

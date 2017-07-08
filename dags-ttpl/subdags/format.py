@@ -26,11 +26,11 @@ import sys
 default_args = {
 	'owner': 'wireless',
 	'depends_on_past': False,
-	'start_date': datetime.now(),
+	'start_date': datetime.now() - timedelta(minutes=4),
 	'email': ['vipulsharma144@gmail.com'],
 	'email_on_failure': False,
 	'email_on_retry': False,
-	'retries': 1,
+	'retries': 0,
 	'retry_delay': timedelta(minutes=1),
 	'provide_context': True,
 	'catchup': False,
@@ -56,7 +56,7 @@ event_rules = eval(Variable.get('event_rules'))
 operators = eval(Variable.get('operators')) #get operator Dict from 
 config = eval(Variable.get("system_config"))
 debug_mode = eval(Variable.get("debug_mode"))
-
+activate_all_tab = eval(Variable.get("activate_all_tab"))
 result_nw_memc_key = []
 result_sv_memc_key = []
 HEADER = '\033[95m'
@@ -214,12 +214,13 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 		else:
 			try:
 				#logging.info("HOST : %s"%(len(all_down_devices_states),hostname))
-				if all_down_devices_states.get(hostname).get('since') != None:
+				if all_down_devices_states.get(hostname) != None:
 					since_time =  all_down_devices_states.get(hostname).get('since')
 					return since_time
 			except Exception:
 				logging.info("Device %s not found in the dict for ds : %s"%(hostname,ds))
-				traceback.print_exc()
+				return int(time.time())
+				
 
 	"""
 	This function is used to calculate age for the give severity and add it in the dict
@@ -235,7 +236,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 
 		try:
 			device_state = previous_device_state.get(hostname)
-			if device_state.get("state") == current_sev:
+			if device_state.get("state") == current_severity:
 				age = device_state.get("since")
 
 				if age != None and age != '':
@@ -247,17 +248,17 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 					logging.info("Got the devices %s but unable to fetch the since key "%(hostname))
 					return 'unknown'
 
-			elif device_state.get("state") != current_sev:
+			elif device_state.get("state") != current_severity:
 				return current_time
 
 		except Exception:
 			logging.info("Unable to get state for device %s will be created when updating refer"%(hostname))
-			
+			traceback.print_exc()
 		
 
 ###########################################################------------NETWORK--------------- ##################################################
 	def network_format(**kwargs):
-		print "In Network Format"
+	
 		device_to_be_converted_down =eval(Variable.get("device_converted_down"))
 		redis_queue_slot=kwargs.get('task_instance_key_str').split("_")[2:-3]
 		
@@ -357,15 +358,19 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 
 		try:		
 			#create_file_and_write_data(redis_queue_slot+"_result",str(network_list)) #TODO: Here file is overwritten and no record is maintened it is to be discussed
-			redis_hook_4.rpush(str(redis_queue_slot)+"_result",network_list)
-			logging.info("Redis Connection made and data inserted successfully")
-			logging.info("Successfully Inserted data to Redis KEY :"+redis_queue_slot+"_result")
+			if len(network_list) > 0:
+				redis_hook_4.rpush(str(redis_queue_slot)+"_result",network_list)
+				logging.info("Redis Connection made and data inserted successfully")
+				logging.info("Successfully Inserted data to Redis KEY :"+redis_queue_slot+"_result")
+			else:
+				logging.info("No Data At %s"%(str(redis_queue_slot)))
+				redis_hook_4.rpush(str(redis_queue_slot)+"_result",[])
 		except Exception:
 			logging.info("Unable to Insert to Redis")
 			traceback.print_exc()
 ################################################################SERVICE############################################################
 	def service_format(**kwargs):
-		print "In Service Format"
+		
 		kpi_helper_services =['wimax_dl_intrf', 'wimax_ul_intrf', 'cambium_ul_jitter','cambium_rereg_count']
 		rad5k_helper_service = ['rad5k_ss_dl_uas','rad5k_ss_ul_modulation']
 		wimax_sector_id_list = ['wimax_pmp1_ul_util_bgp','wimax_pmp2_dl_util_bgp','wimax_pmp1_dl_util_bgp','wimax_pmp2_ul_util_bgp']
@@ -532,7 +537,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 	def aggregate_sv_data(**kwargs):
 		logging.info("Aggregating Service Data")
 		sv_memc_keys = eval(Variable.get("service_memc_key"))
-		print Variable.get("service_memc_key"),type(Variable.get("service_memc_key"))
+		
 		task_for_machine=kwargs.get('task_instance_key_str').split("_")[3]
 
 		sv_data = {}
@@ -556,16 +561,20 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 				logging.info("About to dump data to Memcache of size of Service : " + str(sys.getsizeof(sv_data)))
 				json_obj = json.dumps(sv_data)
 				logging.info("About to dump data to Redis of size(JSON) of Service :(SIZE) " + str(sys.getsizeof(json_obj)) + " (NAME) sv_agg_nocout_"+str(sv_memc_keys))
-				redis_hook_4.rpush("sv_agg_nocout_"+str(sv_memc_keys),sv_data.get(sv_memc_keys))
-				logging.info("Inserted data in redis")
-				return True
+				if sv_data.get(sv_memc_keys):
+					redis_hook_4.rpush("sv_agg_nocout_"+str(sv_memc_keys),sv_data.get(sv_memc_keys))
+
+					logging.info("Inserted data in redis")
+					return True
+				else:
+					logging.info("Unable to insert SV ")
 		except Exception:
 			logging.error("Unable to put in the combined service data to memcache.")
 			traceback.print_exc()
 			return False
 #this function is used to get all the slots and then combine their data into one site data
 	def extract_and_distribute_nw(**kwargs):
-		print("Finding Events for network")
+	
 		site=kwargs.get('params').get('site')
 		all_pl_rta_trap_dict = {}
 		all_pl_rta_trap_dict[site] = []
@@ -612,7 +621,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 			for k,traps in enumerate(machine_data):
 				machine_data[k] = traps
 			logging.info("%s of length %s"%("queue:network:snmptt:%s"%task_for_machine,len(machine_data)))
-			if not debug_mode:
+			if not debug_mode and activate_all_tab:
 				redis_hook_network_alarms.rpush("queue:network:snmptt:%s"%task_for_machine,machine_data)
 			else:
 				logging.info("Debug Mode is active , not inserting into redis")
@@ -622,151 +631,137 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 
 	
 #########################################################################TASKS#######################################################################
-	aggregate_nw_tasks={}
+ 	aggregate_nw_tasks={}
 	aggregate_sv_tasks={}
 	aggregate_nw_smptt_tasks = {}
 	event_site_tasks = {}
 	service_format_sensor_dict = {}
 	network_format_sensor_dict = {}
-	
+	network_sensor_sites = []
+	service_sensor_sites = []
 	update_refer = PythonOperator(
-				task_id="update_device_states",
-				provide_context=False,
-				python_callable=update_device_state_values,
-				#params={"site":site},
-				#redis_hook=redis_hook_4,
-	
-				dag=dag_subdag_format
-				)
-	
+							task_id="update_device_states",
+							provide_context=False,
+							python_callable=update_device_state_values,
+							#params={"site":site},
+							#redis_hook=redis_hook_4,
+
+							dag=dag_subdag_format
+							)
+
 	update_last_device_down_task = PythonOperator(
-				task_id="update_last_device_down",
-				provide_context=False,
-				python_callable=update_last_device_down,
-				#params={"site":site},
-				#redis_hook=redis_hook_4,
-				
-				dag=dag_subdag_format
-				)
+							task_id="update_last_device_down",
+							provide_context=False,
+							python_callable=update_last_device_down,
+							#params={"site":site},
+							#redis_hook=redis_hook_4,
 
-
+							dag=dag_subdag_format
+							)
 	for db in databases:
 		db_name=db.split("_")[1]
 		aggregate_sv_data_task = PythonOperator(
-			task_id="aggregate_%s_sv_data"%db_name,
-			provide_context=True,
-			python_callable=aggregate_sv_data,
-			#params={"ip":machine.get('ip'),"port":site.get('port')},
-			dag=dag_subdag_format,
-			trigger_rule = 'all_done'
-			)
+				task_id="aggregate_%s_sv_data"%db_name,
+				provide_context=True,
+				python_callable=aggregate_sv_data,
+				#params={"ip":machine.get('ip'),"port":site.get('port')},
+				dag=dag_subdag_format,
+				trigger_rule = 'all_done'
+				)
 		aggregate_nw_data_task = PythonOperator(
-			task_id="aggregate_%s_nw_data"%db_name,
-			provide_context=True,
-			python_callable=aggregate_nw_data,
-			#params={"ip":machine.get('ip'),"port":site.get('port')},
-			dag=dag_subdag_format,
-			trigger_rule = 'all_done'
-			)
+				task_id="aggregate_%s_nw_data"%db_name,
+				provide_context=True,
+				python_callable=aggregate_nw_data,
+				#params={"ip":machine.get('ip'),"port":site.get('port')},
+				dag=dag_subdag_format,
+				trigger_rule = 'all_done'
+				)
 		aggregate_smptt_task =  PythonOperator(
-			task_id="aggregate_%s_nw_smptt_data"%db_name,
-			provide_context=True,
-			python_callable=aggregate_smptt,
-			params={"machine":db_name},
-			dag=dag_subdag_format,
-			trigger_rule = 'all_done'
-			)
+				task_id="aggregate_%s_nw_smptt_data"%db_name,
+				provide_context=True,
+				python_callable=aggregate_smptt,
+				params={"machine":db_name},
+				dag=dag_subdag_format,
+				trigger_rule = 'all_done'
+				)
 		aggregate_nw_tasks[db_name] = aggregate_nw_data_task
 		aggregate_sv_tasks[db_name] = aggregate_sv_data_task
 		aggregate_nw_smptt_tasks[db_name] = aggregate_smptt_task
 		aggregate_smptt_task >> update_refer
 		aggregate_smptt_task >> update_last_device_down_task
+#####################################################################################################################################################
+#####################################################################################################################################################
 
 	try:
 		result_nw_memc_key = []
-		for redis_key in network_slots:
-			if not redis_key or "_result" in redis_key:
-				continue
+		for machine in config:
+			sites = machine.get('sites')
+			for site in sites:
+				site_name = site.get('name')
+				total_slot = int(Variable.get("nw_%s_slots"%(site_name)))
+				machine_name = site_name.split("_")[0] #To make UAT Compatible
 
-			machine = redis_key.split("_")[1]
-			site = "_".join(redis_key.split("_")[1:4])
+				if site_name not in network_sensor_sites:
+					nw_extract_task_sensor = ExternalTaskSensor( 
+					external_dag_id="ETL.NETWORK",
+					external_task_id="Network_extract_%s"%site_name,
+					task_id="sense_nw_%s_extract_task"%site_name,
+					poke_interval =2,
+					dag=dag_subdag_format
+					)
+					network_sensor_sites.append(site_name)
+					
 
-			if site not in event_site_tasks.keys():
-				event_nw = PythonOperator(
-				task_id="discover_event_nw_%s_"%(site),
-				provide_context=True,
-				python_callable=extract_and_distribute_nw,
-				params={"site":site},
-				dag=dag_subdag_format
-				)
-				event_site_tasks[site] = event_nw
+				if site_name not in event_site_tasks.keys():
+					event_nw = PythonOperator(
+						task_id="discover_event_nw_%s_"%(site_name),
+						provide_context=True,
+						python_callable=extract_and_distribute_nw,
+						params={"site":site_name},
+						dag=dag_subdag_format
+						)
+					event_site_tasks[site_name] = event_nw
 
-				event_nw >> aggregate_nw_smptt_tasks.get(machine)
+					event_nw >> aggregate_nw_smptt_tasks.get(machine_name)
 
-			if site not in network_format_sensor_dict.keys():
-				network_format_task_sensor =  ExternalTaskSensor( #here task for the same site could be made more than once but it get overriden at the end
-			    external_dag_id="ETL.NETWORK",
-			    external_task_id="Network_extract_%s"%site,
-			    task_id="sense_nw_%s_extract_task"%site,
-			    poke_interval =2,
-			    #sla=timedelta(minutes=1),
-			    dag=dag_subdag_format
-			    )
-				network_format_sensor_dict[site] = network_format_task_sensor
 
-			if site not in service_format_sensor_dict.keys():
-				service_format_task_sensor =  ExternalTaskSensor( #here task for the same site could be made more than once but it get overriden at the end
-			    external_dag_id="ETL.SERVICE",
-			    external_task_id="Service_extract_%s"%site,
-			    task_id="sense_sv_%s_extract_task"%site,
-			    poke_interval =2,
-			    #sla=timedelta(minutes=1),
-			    dag=dag_subdag_format
-			    )
-				service_format_sensor_dict[site] = service_format_task_sensor
+				for slot in range(1,total_slot+1):
+					network_tasks = None
+					task = ("nw_%s_slot_%s"%(site_name,slot))
+					task_name = task.split("_")
+					result_list = task.split("_")
 
-		
-		for redis_key in network_slots:
+
+					task_name.append("format")
+					result_list.append("result")
+
+					name = "_".join(task_name)
+					result_nw_memc_key.append("_".join(result_list))
+
+					network_tasks=PythonOperator(
+						task_id="%s"%name,
+						provide_context=True,
+						python_callable=network_format,
+						#params={"previous_all_device_states":previous_all_device_states},
+						dag=dag_subdag_format
+
+						)
+
+					try:
+						nw_extract_task_sensor >> network_tasks
+						network_tasks >> event_site_tasks.get(site_name)
+						network_tasks >> aggregate_nw_tasks.get(machine_name)
+					except Exception:
+						logging.info("Unable to attach tasks to %s"%site)
+						traceback.print_exc()
 			
-			if not redis_key or "_result" in redis_key:
-				continue
-
-			task_name =  redis_key.split("_")
-			site = "_".join(task_name[1:4])
-			
-			machine = task_name[1]
-			result_list = redis_key.split("_")
-
-			task_name.append("format")
-			result_list.append("result")
-
-			name = "_".join(task_name)
-			result_nw_memc_key.append("_".join(result_list))
-			
-			network_tasks1=PythonOperator(
-				task_id="%s"%name,
-				provide_context=True,
-				python_callable=network_format,
-				#params={"previous_all_device_states":previous_all_device_states},
-				dag=dag_subdag_format
-				)
-			try:
-				 network_format_sensor_dict.get(site) >> network_tasks1
-			except Exception:
-				logging.info("Unable to attach sensor to %s"%site)
-
-			network_tasks1 >> event_site_tasks.get(site)
-			try:
-				
-				 network_tasks1 >> aggregate_nw_tasks.get(machine)  
-			except Exception:
-				logging.error("Unable to find the task with dependency.")
-		
 		Variable.set("network_memc_key",str(result_nw_memc_key))
 	except Exception:
 		logging.error("There is an error while create format tasks for network data")
 		traceback.print_exc()
 
+#####################################################################################################################################################
+#####################################################################################################################################################
 	try:
 		result_sv_memc_key=[]
 		for machine in config:
@@ -777,7 +772,17 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 				total_slot = int(Variable.get("sv_%s_slots"%(site_name)))
 				#machine_name = machine.get("Name")
 				machine_name = site_name.split("_")[0]
-				
+				if site_name not in service_sensor_sites:
+					service_format_task_sensor =  ExternalTaskSensor( #here task for the same site could be made more than once but it get overriden at the end
+					external_dag_id="ETL.SERVICE",
+					external_task_id="Service_extract_%s"%site_name,
+					task_id="sense_sv_%s_extract_task"%site_name,
+					poke_interval =2,
+					#sla=timedelta(minutes=1),
+					dag=dag_subdag_format
+					)
+				   	service_sensor_sites.append(site_name)
+
 				for slot in range(1,total_slot+1):
 
 					task = ("sv_%s_slot_%s"%(site_name,slot))
@@ -796,8 +801,9 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 						python_callable=service_format,
 						#params={"ip":machine.get('ip'),"port":site.get('port')},
 						dag=dag_subdag_format
-						)				
-					service_format_sensor_dict.get(site_name) >> service_tasks
+						)
+			
+					service_format_task_sensor >> service_tasks
 					service_tasks >> aggregate_sv_tasks.get(machine_name)
 
 		

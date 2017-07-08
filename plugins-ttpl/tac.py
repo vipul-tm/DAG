@@ -22,7 +22,7 @@ import inspect
 
 import json
 # Creating a flask admin BaseView
-OPERATORS = [MySqlLoaderOperator,TelradExtractor,Nagiosxtractor,EvaluateTransformer]
+OPERATORS = [MySqlLoaderOperator,TelradExtractor,Nagiosxtractor,EvaluateTransformer,List2DictTransformer]
 HOOKS = [RedisHook,MemcacheHook]
 EXECUTOR = []
 MACRO = []

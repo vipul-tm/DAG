@@ -14,7 +14,7 @@ import time
 default_args = {
     'owner': 'wireless',
     'depends_on_past': False,
-    'start_date': datetime(2017, 03, 30,13,00) - timedelta(minutes=5),
+    'start_date': datetime.now() - timedelta(minutes=4),
     'email': ['vipulsharma144@gmail.com'],
     'email_on_failure': False,
     'email_on_retry': False,
@@ -83,7 +83,7 @@ def service_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 
 	def extract_and_distribute(*args,**kwargs):
 		st = get_time()
-		print kwargs,args
+
 		try:
 			service_query = Variable.get('service_query') #to get LQL to extract service
 			device_slot = Variable.get("device_slot_service") #the number of devices to be made into 1 slot
@@ -95,7 +95,9 @@ def service_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 
 		task_site = kwargs.get('task_instance_key_str').split('_')[4:7]
 		site_name = "_".join(task_site)
-		start_time = int(Variable.get("data_service_extracted_till"))
+
+		start_time = int(Variable.get("data_service_extracted_till_%s"%site_name))
+		
 		end_time = int(time.time())
 
 		service_query =  "GET services\nColumns: host_name host_address service_description service_state "+\
@@ -121,15 +123,15 @@ def service_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 		try:
 			start_time = get_time()
 			service_data = eval(get_from_socket(site_name, service_query,site_ip,site_port))
-			print service_query
 			logging.info("Fetch Time %s"%subtract_time(start_time))
-			Variable.set("data_service_extracted_till",end_time)
+			Variable.set("data_service_extracted_till_%s"%site_name,end_time)
 			#for x in service_data:
 			#	 if x[1] == '10.175.161.2':
 			#		print x
 		except Exception:
 			logging.error(OKGREEN+"Unable to fetch the data from Socket")
 			logging.error('SITE:'+str(site_name)+"\n PORT : "+str(site_port )+ "\n IP: " +str(site_ip)+NC)
+			service_data = []
 			traceback.print_exc()
 
 		logging.info("The length of Data recieved " + str(len(service_data)))

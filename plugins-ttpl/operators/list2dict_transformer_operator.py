@@ -7,22 +7,11 @@ from airflow.hooks import RedisHook
 
 class List2DictTransformer(BaseOperator):
 	"""
-	This Operator is used to evaluate string data for furthur processing ,it is python eval function<br />
+	This Operator is used to evaluate List data and converts the input data to dict provided as skeleton dict <br />
 
 	<b> Requirement </b> :- <br />
 
 	Connection:The Telrad connection should have: <br />
-		1) redis_conn <br />
-		2) identifier_input <br />
-		3) identifier_output <br />
-		4) start_timestamp <br />
-		5) end_timestamp <br />
-	Timestamp Must be present in the 
-		"""
-
-	
-	ui_color = '#edffed'
-	arguments= """
 		1) redis_conn : the Redis Hook Object <br />
 		2) identifier_input <br />
 		3) identifier_output <br />
@@ -31,13 +20,30 @@ class List2DictTransformer(BaseOperator):
 		6) end_timestamp <br />
 		7) payload
 		8) index_key
-		9) indexed = False <br />
+		9) skeleton_dict
+		10) indexed = False <br />
+
+		"""
+
+	
+	ui_color = '#e1	ffed'
+	arguments= """
+		1) redis_conn : the Redis Hook Object <br />
+		2) identifier_input <br />
+		3) identifier_output <br />
+		4) output_identifier_index <br />
+		5) start_timestamp <br />
+		6) end_timestamp <br />
+		7) payload <br />
+		8) index_key <br />
+		9) skeleton_dict <br />
+		10) indexed = False <br />
 
 		"""
 
 	@apply_defaults
 	def __init__(
-			self,redis_conn,identifier_input,identifier_output,output_identifier_index,start_timestamp,end_timestamp,payload,index_key,indexed=False, *args, **kwargs):
+			self,redis_conn,identifier_input,identifier_output,output_identifier_index,start_timestamp,end_timestamp,payload,index_key,skeleton_dict,indexed=False, *args, **kwargs):
 		super(TelradExtractor, self).__init__(*args, **kwargs)
 		self.redis_conn=redis_conn
 		self.identifier_input = identifier_input

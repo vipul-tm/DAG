@@ -14,10 +14,11 @@ import itertools
 import socket
 import random
 import traceback
+import time
 default_args = {
     'owner': 'wireless',
     'depends_on_past': False,
-    'start_date': datetime.now() - timedelta(minutes=5),
+    'start_date': datetime.now() - timedelta(minutes=4),
     'email': ['vipulsharma144@gmail.com'],
     'email_on_failure': False,
     'email_on_retry': False,
@@ -92,6 +93,7 @@ def network_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 		try:
 			network_query = Variable.get('network_query')
 			device_slot = Variable.get("device_slot_network")
+
 		except Exception:
 			logging.info("Unable to fetch Network Query Failing Task")
 			return 1
@@ -101,6 +103,13 @@ def network_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 		site_ip = kwargs.get('params').get("ip")
 		site_port = kwargs.get('params').get("port")
 		logging.info("Extracting data for site"+str(site_name)+"@"+str(site_ip)+" port "+str(site_port))
+
+		start_time = int(Variable.get("data_network_extracted_till_%s"%site_name))
+		end_time = int(time.time())
+		Variable.set("data_network_extracted_till_%s"%(site_name),end_time)
+
+		network_query = network_query%(start_time,end_time)
+		
 		network_data = []
 		try:
 			start_time = get_time()
@@ -117,8 +126,12 @@ def network_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 		for slot in device_slot_data:	
 			redis_hook_4.rpush("nw_"+site_name+"_slot_"+str(i),slot)
 			i+=1
+
+		Variable.set("nw_%s_slots"%(site_name),str(len(device_slot_data)))
+
 		if len(device_slot_data) >0:
 			return "Success"
+			
 
 		
 

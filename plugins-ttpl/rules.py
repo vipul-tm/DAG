@@ -92,9 +92,55 @@ class NetworkView(BaseView):
            
         return self.render("rules_plugin/rules.html",attributes=attributes,data=data_to_page)
 
+class PrevStateView(BaseView):
+    @expose('/')
+    def test(self):
+        # in this example, put your test_plugin/test.html template at airflow/plugins/templates/test_plugin/test.htm
+        redis_hook_5 = RedisHook(redis_conn_id="redis_hook_5")
+
+        pl_states = eval(redis_hook_5.get("all_devices_state"))
+        rta_states = eval(redis_hook_5.get("all_devices_state_rta"))
+        last_down_states = eval(redis_hook_5.get("all_devices_down_state"))
+        
+     
+        
+        pl_list = []
+        rta_list = []
+        down_list = []
+
+
+        data_to_page = []
+        attributes = []
+
+        for device in pl_states:
+            pl = {}
+            pl['device_name'] = device
+            pl['state'] = pl_states.get(device).get('state')
+            pl['since'] = pl_states.get(device).get('since')
+            pl_list.append(pl.copy())
+
+        for device in rta_states:
+            rta = {}
+            rta['device_name'] = device
+            rta['state'] = rta_states.get(device).get('state')
+            rta['since'] = rta_states.get(device).get('since')
+            rta_list.append(rta.copy())
+
+        for device in last_down_states:
+            down = {}
+            down['device_name'] = device
+            down['state'] = last_down_states.get(device).get('state')
+            down['since'] = last_down_states.get(device).get('since')
+            down_list.append(down.copy())
+
+           
+        return self.render("rules_plugin/prev_states.html",attributes=attributes,rta=rta_list,pl=pl_list,down=down_list)
+
+
 v = TestView(category="Rule Plugin", name="Rules View")
 v2 = NetworkView(category="Rule Plugin", name="Network")
 v3 = ServiceView(category="Rule Plugin", name="Service")
+v4 = PrevStateView(category="Rule Plugin", name="Previous States")
 
 # Creating a flask blueprint to intergrate the templates and static folder
 bp = Blueprint(
@@ -119,6 +165,6 @@ class AirflowTestPlugin(AirflowPlugin):
     hooks = [PluginHook]
     executors = [PluginExecutor]
     macros = [plugin_macro]
-    admin_views = [v,v2,v3]
+    admin_views = [v,v2,v3,v4]
     flask_blueprints = [bp]
     menu_links = [ml,ml2]

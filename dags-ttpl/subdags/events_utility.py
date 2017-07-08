@@ -43,8 +43,9 @@ def get_device_alarm_tuple(network_data,event_rules):
 			prev_state = all_devices_states.get(hostname).get('state')
 		except Exception:
 			logging.info("No previous state found for HOST %s"%hostname)
-			traceback.print_exc()
-			continue
+			
+			#traceback.print_exc()
+			
 			
 		if prev_state.lower() != severity.lower() and prev_state != None:
 			 #TODO:Send clear trap here of the previous severity
@@ -108,12 +109,12 @@ def update_last_device_down(redis_hook=redis_hook_4):
 	aggregated_data_vals = list(redis_hook.get_keys("nw_agg_nocout_*"))
 	new_all_devices_down_states = {}
 	for key in aggregated_data_vals:
+		logging.info("Gettting For %s"%(key))
 		data = redis_hook.rget(key)
 		for slot in data:
 			slot=eval(slot)
 			for device in slot:
 				device = eval(device)
-				
 				new_host = str(device.get("host"))
 				new_state = str(device.get("severity"))
 				new_refer = str(device.get("refer"))
@@ -135,7 +136,7 @@ def update_last_device_down(redis_hook=redis_hook_4):
 						logging.warning("Created new sate dict for %s as severity %s and since %s"%(new_host,new_state,new_refer))
 	try:
 		redis_hook_5.set("all_devices_down_state",str(new_all_devices_down_states))
-		logging.info("Successfully inserted All the values in redis")
+		logging.info("Successfully inserted All(%s) the values in redis"%(len(new_all_devices_down_states)))
 	except Exception:
 		logging.error("Unable to update last device down ")
 		traceback.print_exc()
