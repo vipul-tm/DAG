@@ -22,7 +22,7 @@ from celery.signals import task_prerun, task_postrun
 default_args = {
     'owner': 'wireless',
     'depends_on_past': False,
-    'start_date': datetime.now() - timedelta(minutes=4),
+    'start_date': datetime.now() - timedelta(minutes=2),
     #'email': ['vipulsharma144@gmail.com'],
     'email_on_failure': False,
     'email_on_retry': False,
@@ -48,7 +48,7 @@ NW_DB_COLUMNS = "machine_name,current_value,service_name,avg_value,max_value,age
 SV_DB_COLUMNS = "machine_name,site_name,critical_threshold,device_name,ip_address,data_source,current_value,check_timestamp,severity,service_name,age,sys_timestamp,warning_threshold,refer,avg_value,max_value,min_value"
 
 CHILD_DAG_NAME_FORMAT = "FORMAT"
-main_etl_dag=DAG(dag_id=PARENT_DAG_NAME, default_args=default_args, schedule_interval='*/4 * * * *',)
+main_etl_dag=DAG(dag_id=PARENT_DAG_NAME, default_args=default_args, schedule_interval='*/2 * * * *',)
 system_config=eval(Variable.get('system_config'))
 databases=eval(Variable.get('databases'))
 debug_mode = eval(Variable.get("debug_mode"))
@@ -191,6 +191,7 @@ for db in databases:
     external_task_id="aggregate_%s_nw_data"%machine,
     task_id="sense_%s_nw_aggregation"%machine,
     poke_interval=2,
+    trigger_rule = 'all_done',
     #sla=timedelta(minutes=1),
     dag=main_etl_dag
     )
@@ -199,6 +200,7 @@ for db in databases:
     external_task_id="aggregate_%s_sv_data"%machine,
     task_id="sense_%s_sv_aggregation"%machine,
     poke_interval =2,
+    trigger_rule = 'all_done',
     #sla=timedelta(minutes=1),
     dag=main_etl_dag
     )

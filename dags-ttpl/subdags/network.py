@@ -18,7 +18,7 @@ import time
 default_args = {
     'owner': 'wireless',
     'depends_on_past': False,
-    'start_date': datetime.now() - timedelta(minutes=4),
+    'start_date': datetime.now() - timedelta(minutes=2),
     'email': ['vipulsharma144@gmail.com'],
     'email_on_failure': False,
     'email_on_retry': False,
@@ -104,8 +104,8 @@ def network_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 		site_port = kwargs.get('params').get("port")
 		logging.info("Extracting data for site"+str(site_name)+"@"+str(site_ip)+" port "+str(site_port))
 
-		start_time = int(Variable.get("data_network_extracted_till_%s"%site_name))
-		end_time = int(time.time())
+		start_time = float(Variable.get("data_network_extracted_till_%s"%site_name))
+		end_time = time.time()
 		Variable.set("data_network_extracted_till_%s"%(site_name),end_time)
 
 		network_query = network_query%(start_time,end_time)
@@ -118,19 +118,29 @@ def network_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 		except Exception:
 			logging.error("Unable to get Network Data")
 			traceback.print_exc()
-		#TODO: 		
-		group_iter = [iter(network_data)]*int(device_slot)
-		device_slot_data = list(([e for e in t if e !=None] for t in itertools.izip_longest(*group_iter)))
-		logging.info("Got data of length %s and make slots as %s"%(len(network_data),len(device_slot_data)))
-		i=1;		
-		for slot in device_slot_data:	
-			redis_hook_4.rpush("nw_"+site_name+"_slot_"+str(i),slot)
-			i+=1
+		#TODO:
+		if len(network_data) > 0: 		
+			group_iter = [iter(network_data)]*int(device_slot)
+			device_slot_data = list(([e for e in t if e !=None] for t in itertools.izip_longest(*group_iter)))
+			logging.info("Got data of length %s and make slots as %s"%(len(network_data),len(device_slot_data)))
+			i=1;
+			for slot in device_slot_data:	
+				redis_hook_4.rpush("nw_"+site_name+"_slot_"+str(i),slot)
+				i+=1
 
-		Variable.set("nw_%s_slots"%(site_name),str(len(device_slot_data)))
+			Variable.set("nw_%s_slots"%(site_name),str(len(device_slot_data)))
+			if len(device_slot_data) >0:
+				return "Success"
+			else:
+				logging.info("WTF NO Data :O")
 
-		if len(device_slot_data) >0:
-			return "Success"
+		else:
+			logging.info("Unable to extract data for time %s to %s "%(start_time,end_time))
+			return "No Raw Data"
+
+		
+
+		
 			
 
 		

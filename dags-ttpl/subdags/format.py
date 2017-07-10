@@ -26,7 +26,7 @@ import sys
 default_args = {
 	'owner': 'wireless',
 	'depends_on_past': False,
-	'start_date': datetime.now() - timedelta(minutes=4),
+	'start_date': datetime.now() - timedelta(minutes=2),
 	'email': ['vipulsharma144@gmail.com'],
 	'email_on_failure': False,
 	'email_on_retry': False,
@@ -271,7 +271,8 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 		logging.info("Getting from redis Key ->"+ "_".join(redis_queue_slot))
 		redis_queue_slot="_".join(redis_queue_slot)
 		slot_data = redis_hook_4.rget(redis_queue_slot)
-		
+		if len(slot_data) <= 0 :
+			return "No Data"
 
 		#slot_data = [[u'110556',u'10.171.132.2',0,1491822300,1491622173,u'rta=1.151ms;50.000;60.00;0;pl=30%;10;20;; rtmax=1.389ms;;;; rtmin=1.035ms;;;;']] * 10
 		network_list = []
@@ -710,6 +711,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 					external_task_id="Network_extract_%s"%site_name,
 					task_id="sense_nw_%s_extract_task"%site_name,
 					poke_interval =2,
+					trigger_rule = 'all_done',
 					dag=dag_subdag_format
 					)
 					network_sensor_sites.append(site_name)
@@ -781,6 +783,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 					external_task_id="Service_extract_%s"%site_name,
 					task_id="sense_sv_%s_extract_task"%site_name,
 					poke_interval =2,
+					trigger_rule = 'all_done',
 					#sla=timedelta(minutes=1),
 					dag=dag_subdag_format
 					)

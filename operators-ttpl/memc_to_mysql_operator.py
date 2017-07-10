@@ -148,16 +148,21 @@ class MemcToMySqlOperator(BaseOperator):
 								new_slot.append(device.copy())
 							conn = hook.get_conn()
 							cursor = conn.cursor()
-							logging.info("We are about to upload %s service in total .for check time %s and Local Time %s"%(len(new_slot),new_slot[0].get('check_timestamp'),new_slot[0].get('local_timestamp')))
 							try:
+								logging.info("We are about to upload %s service in total .for check time %s and Local Time %s"%(len(new_slot),new_slot[0].get('check_timestamp'),new_slot[0].get('local_timestamp')))
+								try:
 									cursor.executemany(self.sql, new_slot)
 									logging.info("Successfully executed Query")
-							except Exception:
+								except Exception:
 									logging.info("Some Problem")
 									traceback.print_exc()
-							conn.commit()
-							cursor.close()
-							conn.close()
+								conn.commit()
+								cursor.close()
+								conn.close()
+							except:
+								logging.info("No Data to show timestmp of")
+
+							
 							#new_data.extend(new_slot)
 						#logging.info(new_data[0])
 						#conn = hook.get_conn()

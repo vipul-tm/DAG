@@ -6,7 +6,7 @@
 
 {% block body %}
 {{ super() }}
-<link rel="stylesheet" type="text/css" href="http://ajax.aspnetcdn.com/ajax/jquery.dataTables/1.9.4/css/jquery.dataTables.css">
+<link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='dataTables/datatables.min.css') }}">
 <link rel="stylesheet" href="//code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
  <style media="screen" type="text/css">
      td {
@@ -61,7 +61,7 @@
 {% block tail_js %}
     {{ super() }}
     <script type="text/javascript" charset="utf8" src="http://ajax.aspnetcdn.com/ajax/jQuery/jquery-1.8.2.min.js"></script>
-    <script type="text/javascript" charset="utf8" src="{{ url_for('static', filename='data-tables.js') }}"> </script>
+    <script type="text/javascript" charset="utf8" src="{{ url_for('static',  filename='dataTables/datatables.min.js') }}"> </script>
     <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
     <script>
     $(document).ready(function(){
@@ -81,7 +81,9 @@
                    ],
                    "sScrollY": "500px",
                    "bPaginate": true,
-                    "pageLength": 50
+                    "pageLength": 50,
+                     "dom": 'Bfrtip',
+                    "buttons": [ 'excel']
 
         });
       rta1 = $("#rtas").dataTable({
@@ -92,7 +94,9 @@
                    ],
                    "sScrollY": "500px",
                    "bPaginate": true,
-                    "pageLength": 50
+                    "pageLength": 50,
+                     "dom": 'Bfrtip',
+                    "buttons": [ 'excel']
 
         });
        dds = $("#ddss").dataTable({
@@ -103,7 +107,9 @@
                    ],
                    "sScrollY": "500px",
                    "bPaginate": true,
-                    "pageLength": 50
+                    "pageLength": 50,
+                     "dom": 'Bfrtip',
+                    "buttons": [ 'excel']
 
         });
       
@@ -121,7 +127,9 @@
 
 
    });
-
+    $(‘.dropdown’).click(function(){
+      $(this).addClass(‘open’);
+      });
   function changeHeadersCss(){
     $("table").css("width","100%")
     $("table").parent().css("width","100%")

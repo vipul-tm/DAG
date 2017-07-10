@@ -14,7 +14,7 @@ import time
 default_args = {
     'owner': 'wireless',
     'depends_on_past': False,
-    'start_date': datetime.now() - timedelta(minutes=4),
+    'start_date': datetime.now() - timedelta(minutes=2),
     'email': ['vipulsharma144@gmail.com'],
     'email_on_failure': False,
     'email_on_retry': False,
@@ -96,9 +96,9 @@ def service_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 		task_site = kwargs.get('task_instance_key_str').split('_')[4:7]
 		site_name = "_".join(task_site)
 
-		start_time = int(Variable.get("data_service_extracted_till_%s"%site_name))
+		start_time = float(Variable.get("data_service_extracted_till_%s"%site_name))
 		
-		end_time = int(time.time())
+		end_time = time.time()
 
 		service_query =  "GET services\nColumns: host_name host_address service_description service_state "+\
                             "last_check service_last_state_change host_state service_perf_data\nFilter: service_description ~ _invent\n"+\
@@ -133,18 +133,21 @@ def service_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 			logging.error('SITE:'+str(site_name)+"\n PORT : "+str(site_port )+ "\n IP: " +str(site_ip)+NC)
 			service_data = []
 			traceback.print_exc()
+		if len(service_data) > 0:
 
-		logging.info("The length of Data recieved " + str(len(service_data)))
-		group_iter = [iter(service_data)]*int(device_slot)
-		device_slot_data = list(([e for e in t if e !=None] for t in itertools.izip_longest(*group_iter)))
-		i=1;
-		logging.info("Service Slot created in redis -> " + str(len(device_slot_data)))		
-		for slot in device_slot_data:
-			redis_hook_4.rpush("sv_"+site_name+"_slot_"+str(i),slot)
-			logging.info("Pushing %s"%("sv_"+site_name+"_slot_"+str(i)))
-			i+=1
-		Variable.set("sv_%s_slots"%(site_name),str(len(device_slot_data)))
-		logging.info("Total Time %s"%subtract_time(st))
+			logging.info("The length of Data recieved " + str(len(service_data)))
+			group_iter = [iter(service_data)]*int(device_slot)
+			device_slot_data = list(([e for e in t if e !=None] for t in itertools.izip_longest(*group_iter)))
+			i=1;
+			logging.info("Service Slot created in redis -> " + str(len(device_slot_data)))		
+			for slot in device_slot_data:
+				redis_hook_4.rpush("sv_"+site_name+"_slot_"+str(i),slot)
+				logging.info("Pushing %s"%("sv_"+site_name+"_slot_"+str(i)))
+				i+=1
+			Variable.set("sv_%s_slots"%(site_name),str(len(device_slot_data)))
+			logging.info("Total Time %s"%subtract_time(st))
+		else:
+			logging.info("Unable to extract data for time %s to %s "%(start_time,end_time))
 
 	for machine in config:
 		for site in machine.get('sites'):
