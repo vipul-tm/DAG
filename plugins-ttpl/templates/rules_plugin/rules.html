@@ -27,6 +27,10 @@
       
     <script>
         // Initialize DataTable
+           $('.dropdown').click(function(){
+      $(this).addClass('open');
+      });
+           
         $(document).ready(function(){
             var loc = window.location.pathname;
             console.log(loc)

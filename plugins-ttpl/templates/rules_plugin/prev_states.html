@@ -64,6 +64,11 @@
     <script type="text/javascript" charset="utf8" src="{{ url_for('static',  filename='dataTables/datatables.min.js') }}"> </script>
     <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js"></script>
     <script>
+
+    $('.dropdown').click(function(){
+      $(this).addClass('open');
+      });
+
     $(document).ready(function(){
         $( "#tabs" ).tabs();
    /// });
@@ -127,14 +132,14 @@
 
 
    });
-    $(‘.dropdown’).click(function(){
-      $(this).addClass(‘open’);
-      });
+    
   function changeHeadersCss(){
     $("table").css("width","100%")
     $("table").parent().css("width","100%")
   }
   window.onload = changeHeadersCss
+
+
   </script>
 {% endblock %}
 
