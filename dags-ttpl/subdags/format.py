@@ -401,78 +401,81 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 		service_list = []
 		start_time = time.time()
 		try:
-			for device_data in slot_data:
-				
-				data_dict = data_dict_sample 
-				device_data = eval(device_data)
-				refer = ""
-
-				ds_values = device_data[7].split('=')
-
-				if len(device_data) < 8 or device_data[0] in device_down_list or not len(device_data[-1]):
-					logging.info("Ommiting device %s"%device_data[0])
-					continue
-#################################################################ADDITIONAL HANDLING FOR PMP PORT##########################################
-				if device_data[2] in wimax_sector_id_list:
-						
-						port_type = device_data[2].split("_")[1]
-						key1 = str(device_data[0])+"_"+str(port_type)+"_sec"
-						try:			  #str(hostname)+"_pmp1_sec"
-							refer = memc_con.get(key1)
-						except Exception:
-							logging.info("Unable to find wimax sector data from MEMC")
-							continue
-						
-				
-#####################################################################################################################################
-				severity_war_cric  = get_severity_values(device_data[2])
-				#logging.info("FOR device %s"%device_data[0])
-				data_dict['host'] = device_data[0]
-				data_dict['ip_address'] = device_data[1]
-				data_dict['ds'] = ds_values[0] if len(ds_values) >= 1  else ''
-				data_dict['check_time'] = int(device_data[4]) if device_data[4] else 0
-				data_dict['local_timestamp'] = forward_five_min(int(device_data[4]))#Floored in previous  multiple of 5
-				data_dict['service'] = device_data[2]
-				data_dict['cur'] = ds_values[1].split(';')[0] if len(ds_values) > 1  else ''
-				data_dict['war'] = severity_war_cric[1] if len(severity_war_cric) > 1 else ''
-				data_dict['cric'] = severity_war_cric[0] if len(severity_war_cric) > 0 else ''
-				#ds_values[1].split(';')[2]
-				data_dict['severity'] =calculate_severity(device_data[2],ds_values[1].split(';')[0]) if len(ds_values) > 1  else '' #TODO: get data from static DB
-				data_dict['age'] = int(device_data[5]) if device_data[5] else 0 #TODO: Calclate at my end change of severiaty
-				data_dict['site'] = site_name
-				data_dict['refer'] = refer
-				data_dict['machine_name']=redis_queue_slot.split("_")[1]
-				service_list.append(data_dict.copy())
-
-##########################SOME ADDITIONAL HANDLING OF SERVICES##########################################################################
-				ip_address = data_dict['ip_address']
-				value = data_dict['cur']
-				if str(data_dict['service']) in rad5k_helper_service:
+			if len(slot_data) > 0:
+				for device_data in slot_data:
 					
-					if str(data_dict['service']) == 'rad5k_ss_ul_modulation':
-							key = ip_address+ "_rad5k_ss_ul_mod"
-							key = str(key)
-							memcachelist(key,value,memc_con)
-					elif str(data_dict['service']) == 'rad5k_ss_dl_uas':
-							key = ip_address+ "_uas_list"
-							key = str(key)
-							memcachelist(key,value,memc_con)
+					data_dict = data_dict_sample 
+					device_data = eval(device_data)
+					refer = ""
 
-				if str(data_dict['service']) in kpi_helper_services:
-					key = ip_address+ "_"+str(data_dict['service'])
-					key = str(key)
-					memcachelist(key,data_dict['severity'],memc_con)
+					ds_values = device_data[7].split('=')
 
-				if device_data[2] in provis_services:
-					key = "provis:"+str(device_data[0])+":"+str(device_data[2])
-					#logging.info(key)
-					try:
-						memc_con.set(key,value)
-					except Exception:
-						logging.info("Unable to set Provisional KPI data into MEMC")
+					if len(device_data) < 8 or device_data[0] in device_down_list or not len(device_data[-1]):
+						logging.info("Ommiting device %s"%device_data[0])
+						continue
+	#################################################################ADDITIONAL HANDLING FOR PMP PORT##########################################
+					if device_data[2] in wimax_sector_id_list:
+							
+							port_type = device_data[2].split("_")[1]
+							key1 = str(device_data[0])+"_"+str(port_type)+"_sec"
+							try:			  #str(hostname)+"_pmp1_sec"
+								refer = memc_con.get(key1)
+							except Exception:
+								logging.info("Unable to find wimax sector data from MEMC")
+								continue
+							
+					
+	#####################################################################################################################################
+					severity_war_cric  = get_severity_values(device_data[2])
+					#logging.info("FOR device %s"%device_data[0])
+					data_dict['host'] = device_data[0]
+					data_dict['ip_address'] = device_data[1]
+					data_dict['ds'] = ds_values[0] if len(ds_values) >= 1  else ''
+					data_dict['check_time'] = int(device_data[4]) if device_data[4] else 0
+					data_dict['local_timestamp'] = forward_five_min(int(device_data[4]))#Floored in previous  multiple of 5
+					data_dict['service'] = device_data[2]
+					data_dict['cur'] = ds_values[1].split(';')[0] if len(ds_values) > 1  else ''
+					data_dict['war'] = severity_war_cric[1] if len(severity_war_cric) > 1 else ''
+					data_dict['cric'] = severity_war_cric[0] if len(severity_war_cric) > 0 else ''
+					#ds_values[1].split(';')[2]
+					data_dict['severity'] =calculate_severity(device_data[2],ds_values[1].split(';')[0]) if len(ds_values) > 1  else '' #TODO: get data from static DB
+					data_dict['age'] = int(device_data[5]) if device_data[5] else 0 #TODO: Calclate at my end change of severiaty
+					data_dict['site'] = site_name
+					data_dict['refer'] = refer
+					data_dict['machine_name']=redis_queue_slot.split("_")[1]
+					service_list.append(data_dict.copy())
 
-####################################################################################################################ENDS##############################
-			logging.info("Time for FOR LOOP  = "+ str(time.time() - start_time))
+	##########################SOME ADDITIONAL HANDLING OF SERVICES##########################################################################
+					ip_address = data_dict['ip_address']
+					value = data_dict['cur']
+					if str(data_dict['service']) in rad5k_helper_service:
+						
+						if str(data_dict['service']) == 'rad5k_ss_ul_modulation':
+								key = ip_address+ "_rad5k_ss_ul_mod"
+								key = str(key)
+								memcachelist(key,value,memc_con)
+						elif str(data_dict['service']) == 'rad5k_ss_dl_uas':
+								key = ip_address+ "_uas_list"
+								key = str(key)
+								memcachelist(key,value,memc_con)
+
+					if str(data_dict['service']) in kpi_helper_services:
+						key = ip_address+ "_"+str(data_dict['service'])
+						key = str(key)
+						memcachelist(key,data_dict['severity'],memc_con)
+
+					if device_data[2] in provis_services:
+						key = "provis:"+str(device_data[0])+":"+str(device_data[2])
+						#logging.info(key)
+						try:
+							memc_con.set(key,value)
+						except Exception:
+							logging.info("Unable to set Provisional KPI data into MEMC")
+
+	####################################################################################################################ENDS##############################
+				logging.info("Time for FOR LOOP  = "+ str(time.time() - start_time))
+			else:
+				logging.info("No Data for input")
 
 
 
