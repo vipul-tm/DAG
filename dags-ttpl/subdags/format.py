@@ -258,12 +258,10 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 
 ###########################################################------------NETWORK--------------- ##################################################
 	def network_format(**kwargs):
-	
+		
 		device_to_be_converted_down =eval(Variable.get("device_converted_down"))
 		redis_queue_slot=kwargs.get('task_instance_key_str').split("_")[2:-3]
-		
-		all_down_devices_states = get_previous_device_states(redis_hook_5,"down")
-			
+		all_down_devices_states = get_previous_device_states(redis_hook_5,"down")	
 
 		state_has_changed = True #TODO: this variable is used to decided that do 
 								 #we need to update teh refer dict in memc and redis \

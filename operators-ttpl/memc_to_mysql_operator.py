@@ -46,6 +46,8 @@ class MemcToMySqlOperator(BaseOperator):
 		self.db_coloumns = db_coloumns
 		self.db = "_".join(memc_key.split("_")[2:4])
 	def execute(self, context):
+
+
 		debug_mode = eval(Variable.get("debug_mode"))
 		
 		if not debug_mode:

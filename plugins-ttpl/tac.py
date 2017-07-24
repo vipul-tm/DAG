@@ -9,6 +9,7 @@ from operators.telrad_extractor_operator import TelradExtractor
 from operators.nagios_extractor_operator import Nagiosxtractor
 from operators.evaluate_transformer_operator import EvaluateTransformer
 from operators.list2dict_transformer_operator import List2DictTransformer
+from operators.api_extractor_operator import ApiExtractor
 # Importing base classes that we need to derive
 from airflow.hooks.base_hook import BaseHook
 from airflow.models import  BaseOperator
@@ -22,7 +23,7 @@ import inspect
 
 import json
 # Creating a flask admin BaseView
-OPERATORS = [MySqlLoaderOperator,TelradExtractor,Nagiosxtractor,EvaluateTransformer,List2DictTransformer]
+OPERATORS = [MySqlLoaderOperator,TelradExtractor,Nagiosxtractor,EvaluateTransformer,List2DictTransformer,ApiExtractor]
 HOOKS = [RedisHook,MemcacheHook]
 EXECUTOR = []
 MACRO = []

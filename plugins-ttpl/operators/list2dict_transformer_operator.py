@@ -44,7 +44,8 @@ class List2DictTransformer(BaseOperator):
 	@apply_defaults
 	def __init__(
 			self,redis_conn,identifier_input,identifier_output,output_identifier_index,start_timestamp,end_timestamp,payload,index_key,skeleton_dict,indexed=False, *args, **kwargs):
-		super(TelradExtractor, self).__init__(*args, **kwargs)
+		super(List2DictTransformer, self).__init__(*args, **kwargs)
+		print kwargs,BaseOperator
 		self.redis_conn=redis_conn
 		self.identifier_input = identifier_input
 		self.start_timestamp = start_timestamp
@@ -55,7 +56,7 @@ class List2DictTransformer(BaseOperator):
 		self.index_key = index_key
 		self.indexed = indexed
 		
-	def execute(self, context):
+	def execute(self, context,**kwargs):
 		logging.info("Executing Evaluator Operator")
 		transformed_data = []
 		converted_dict = {}
