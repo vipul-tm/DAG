@@ -22,7 +22,7 @@ from celery.signals import task_prerun, task_postrun
 default_args = {
     'owner': 'wireless',
     'depends_on_past': False,
-    'start_date': datetime.now() - timedelta(minutes=2),
+    'start_date': datetime.now() - timedelta(minutes=5),
     #'email': ['vipulsharma144@gmail.com'],
     'email_on_failure': False,
     'email_on_retry': False,
@@ -48,7 +48,7 @@ NW_DB_COLUMNS = "machine_name,current_value,service_name,avg_value,max_value,age
 SV_DB_COLUMNS = "machine_name,site_name,critical_threshold,device_name,ip_address,data_source,current_value,check_timestamp,severity,service_name,age,sys_timestamp,warning_threshold,refer,avg_value,max_value,min_value"
 
 CHILD_DAG_NAME_FORMAT = "FORMAT"
-main_etl_dag=DAG(dag_id=PARENT_DAG_NAME, default_args=default_args, schedule_interval='*/2 * * * *',)
+main_etl_dag=DAG(dag_id=PARENT_DAG_NAME, default_args=default_args, schedule_interval='*/5 * * * *',)
 system_config=eval(Variable.get('system_config'))
 databases=eval(Variable.get('databases'))
 debug_mode = eval(Variable.get("debug_mode"))
@@ -60,17 +60,20 @@ debug_mode = eval(Variable.get("debug_mode"))
 network_etl = SubDagOperator(
     subdag=network_etl(PARENT_DAG_NAME, CHILD_DAG_NAME_NETWORK, datetime(2017, 2, 24),main_etl_dag.schedule_interval),
     task_id=CHILD_DAG_NAME_NETWORK,
-    dag=main_etl_dag
+    dag=main_etl_dag,
+    queue='poller_queue'
     )
 service_etl = SubDagOperator(
     subdag=service_etl(PARENT_DAG_NAME, CHILD_DAG_NAME_SERVICE, datetime(2017, 2, 24),main_etl_dag.schedule_interval),
     task_id=CHILD_DAG_NAME_SERVICE,
     dag=main_etl_dag,
+    queue='poller_queue'
     )
 format_etl = SubDagOperator(
     subdag=format_etl(PARENT_DAG_NAME, CHILD_DAG_NAME_FORMAT, datetime(2017, 2, 24),main_etl_dag.schedule_interval),
     task_id=CHILD_DAG_NAME_FORMAT,
     dag=main_etl_dag,
+    queue='formatting_queue'
     )
 #topology_etl = SubDagOperator(
 #    subdag=topology_etl(PARENT_DAG_NAME, CHILD_DAG_NAME_TOPOLOGY, datetime(2017, 2, 24),main_etl_dag.schedule_interval),
@@ -83,6 +86,8 @@ device_down_etl = SubDagOperator(
     subdag=device_down_etl(PARENT_DAG_NAME, CHILD_DAG_NAME_DEVICE_DOWN, datetime(2017, 2, 24),main_etl_dag.schedule_interval),
     task_id=CHILD_DAG_NAME_DEVICE_DOWN,
     dag=main_etl_dag,
+    queue='poller_queue',
+    
     )
 # events = SubDagOperator(
 #     subdag=calculate_events(PARENT_DAG_NAME, CHILD_DAG_NAME_EVENTS, datetime(2017, 2, 24),main_etl_dag.schedule_interval),
@@ -95,21 +100,26 @@ get_static_data = PythonOperator(
     provide_context=False,
     python_callable=get_required_static_data,
     #params={"redis_hook_2":redis_hook_2},
-    dag=main_etl_dag)
+    dag=main_etl_dag,
+    queue='poller_queue'
+    )
 
 initiate_etl = PythonOperator(
     task_id="Initiate",
     provide_context=False,
     python_callable=init_etl,
     #params={"FORMAT_QUEUE":FORMAT_QUEUE},
-    dag=main_etl_dag)
+    dag=main_etl_dag,
+    queue='poller_queue',
+    )
 if debug_mode:
     debug_data= PythonOperator(
     task_id="DEBUG",
     provide_context=False,
     python_callable=debug_etl,
     #params={"FORMAT_QUEUE":FORMAT_QUEUE},
-    dag=main_etl_dag)
+    dag=main_etl_dag,
+    queue='poller_queue',)
 
 for db in databases:
     machine = db.split("_")[1]
@@ -148,7 +158,8 @@ for db in databases:
     exec_type = 0,
     sql=query_sv,
     db_coloumns=SV_DB_COLUMNS,
-    trigger_rule = 'all_done'
+    trigger_rule = 'all_done',
+    queue='poller_queue',
     )
     insert_nw_data = MemcToMySqlOperator(
     task_id="upload_network_data_mysql_%s"%db,
@@ -159,7 +170,8 @@ for db in databases:
     exec_type = 0,
     sql=query_nw,
     db_coloumns = NW_DB_COLUMNS,
-    trigger_rule = 'all_done'
+    trigger_rule = 'all_done',
+    queue='poller_queue',
     )
     update_nw_data = MemcToMySqlOperator(
     task_id="update_network_data_mysql_%s"%db,    
@@ -171,7 +183,8 @@ for db in databases:
     sql=query_nw_update,
     update = True,
     db_coloumns = NW_DB_COLUMNS,
-    trigger_rule = 'all_done'
+    trigger_rule = 'all_done',
+    queue='poller_queue',
     )
 
     update_sv_data = MemcToMySqlOperator(
@@ -184,7 +197,8 @@ for db in databases:
     sql=query_sv_update,
     update = True,
     db_coloumns = SV_DB_COLUMNS,
-    trigger_rule = 'all_done'
+    trigger_rule = 'all_done',
+    queue='poller_queue',
    )
     network_sensor = ExternalTaskSensor(
     external_dag_id="ETL.FORMAT",
@@ -193,7 +207,8 @@ for db in databases:
     poke_interval=2,
     trigger_rule = 'all_done',
     #sla=timedelta(minutes=1),
-    dag=main_etl_dag
+    dag=main_etl_dag,
+    queue='poller_queue',
     )
     service_sensor = ExternalTaskSensor(
     external_dag_id="ETL.FORMAT",
@@ -202,7 +217,8 @@ for db in databases:
     poke_interval =2,
     trigger_rule = 'all_done',
     #sla=timedelta(minutes=1),
-    dag=main_etl_dag
+    dag=main_etl_dag,
+    queue='poller_queue',
     )
     service_sensor >> insert_sv_data
     network_sensor >> insert_nw_data
