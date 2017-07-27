@@ -648,7 +648,8 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 							#params={"site":site},
 							#redis_hook=redis_hook_4,
 
-							dag=dag_subdag_format
+							dag=dag_subdag_format,
+							queue=celery_queue
 							)
 
 	update_last_device_down_task = PythonOperator(
@@ -658,7 +659,8 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 							#params={"site":site},
 							#redis_hook=redis_hook_4,
 
-							dag=dag_subdag_format
+							dag=dag_subdag_format,
+							queue=celery_queue
 							)
 	for db in databases:
 		db_name=db.split("_")[1]
@@ -668,7 +670,8 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 				python_callable=aggregate_sv_data,
 				#params={"ip":machine.get('ip'),"port":site.get('port')},
 				dag=dag_subdag_format,
-				trigger_rule = 'all_done'
+				trigger_rule = 'all_done',
+				queue=celery_queue
 				)
 		aggregate_nw_data_task = PythonOperator(
 				task_id="aggregate_%s_nw_data"%db_name,
@@ -676,7 +679,8 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 				python_callable=aggregate_nw_data,
 				#params={"ip":machine.get('ip'),"port":site.get('port')},
 				dag=dag_subdag_format,
-				trigger_rule = 'all_done'
+				trigger_rule = 'all_done',
+				queue=celery_queue,
 				)
 		aggregate_smptt_task =  PythonOperator(
 				task_id="aggregate_%s_nw_smptt_data"%db_name,
@@ -684,7 +688,8 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 				python_callable=aggregate_smptt,
 				params={"machine":db_name},
 				dag=dag_subdag_format,
-				trigger_rule = 'all_done'
+				trigger_rule = 'all_done',
+				queue=celery_queue
 				)
 		aggregate_nw_tasks[db_name] = aggregate_nw_data_task
 		aggregate_sv_tasks[db_name] = aggregate_sv_data_task
@@ -710,7 +715,8 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 					task_id="sense_nw_%s_extract_task"%site_name,
 					poke_interval =2,
 					trigger_rule = 'all_done',
-					dag=dag_subdag_format
+					dag=dag_subdag_format,
+					queue=celery_queue
 					)
 					network_sensor_sites.append(site_name)
 					
@@ -721,7 +727,8 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 						provide_context=True,
 						python_callable=extract_and_distribute_nw,
 						params={"site":site_name},
-						dag=dag_subdag_format
+						dag=dag_subdag_format,
+						queue=celery_queue
 						)
 					event_site_tasks[site_name] = event_nw
 
@@ -746,7 +753,8 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 						provide_context=True,
 						python_callable=network_format,
 						#params={"previous_all_device_states":previous_all_device_states},
-						dag=dag_subdag_format
+						dag=dag_subdag_format,
+						queue=celery_queue
 
 						)
 
@@ -783,7 +791,8 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 					poke_interval =2,
 					trigger_rule = 'all_done',
 					#sla=timedelta(minutes=1),
-					dag=dag_subdag_format
+					dag=dag_subdag_format,
+					queue=celery_queue
 					)
 				   	service_sensor_sites.append(site_name)
 
@@ -804,7 +813,8 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 						provide_context=True,
 						python_callable=service_format,
 						#params={"ip":machine.get('ip'),"port":site.get('port')},
-						dag=dag_subdag_format
+						dag=dag_subdag_format,
+						queue=celery_queue
 						)
 			
 					service_format_task_sensor >> service_tasks
