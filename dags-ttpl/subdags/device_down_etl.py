@@ -30,7 +30,7 @@ OKGREEN = '\033[92m'
 NC='\033[0m'
 redis_hook_4 = RedisHook(redis_conn_id="redis_hook_4")
 
-def device_down_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
+def device_down_etl(parent_dag_name, child_dag_name, start_date, schedule_interval,celery_queue):
 	config = eval(Variable.get('system_config'))
 
 	dag_subdag_device_down = DAG(
@@ -82,6 +82,7 @@ def device_down_etl(parent_dag_name, child_dag_name, start_date, schedule_interv
 			provide_context=True,
 			python_callable=get_devices_down,
 			params={"ip":machine.get('ip'),"port":site.get('port'),"site-name":site.get('name')},
-			dag=dag_subdag_device_down
+			dag=dag_subdag_device_down,
+			queue = celery_queue
 			)	
 	return dag_subdag_device_down

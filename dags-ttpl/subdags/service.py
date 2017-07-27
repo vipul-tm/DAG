@@ -32,7 +32,7 @@ OKGREEN = '\033[92m'
 NC='\033[0m'
 redis_hook_4 = RedisHook(redis_conn_id="redis_hook_4")
 
-def service_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
+def service_etl(parent_dag_name, child_dag_name, start_date, schedule_interval,celery_queue):
 	config = eval(Variable.get('system_config'))
 
 	dag_subdag = DAG(
@@ -156,6 +156,7 @@ def service_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 	  		provide_context=True,
 	 		python_callable=extract_and_distribute,
 			params={"ip":machine.get('ip'),"port":site.get('port')},
-			dag=dag_subdag
+			dag=dag_subdag,
+			queue = celery_queue
 			)	
 	return dag_subdag

@@ -71,7 +71,7 @@ UNDERLINE = '\033[4m'
 
 #################################Init Global Var ends###################################################################################
 
-def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
+def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, celery_queue):
 	network_slots = list(redis_hook_4.get_keys("nw_ospf*"))
 	service_slots = list(redis_hook_4.get_keys("sv_ospf*"))
 	network_slots.extend(redis_hook_4.get_keys("nw_vrfprv*")) #TODO: very bad approach to get pub and vrf daata

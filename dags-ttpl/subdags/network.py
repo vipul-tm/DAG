@@ -36,7 +36,7 @@ redis_hook_4 = RedisHook(redis_conn_id="redis_hook_4") #number specifies the DB 
 redis_hook_5 = RedisHook(redis_conn_id="redis_hook_5")
 memc_con = MemcacheHook(memc_cnx_id = 'memc_cnx')
 
-def network_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
+def network_etl(parent_dag_name, child_dag_name, start_date, schedule_interval,celery_queue):
 	config = eval(Variable.get('system_config'))
 	not_has_previous_data = False #variable to check if previous hosts states are saved in memcache or redis  if not found we create it 
 	#not_has_previous_data = True #uncomment this file if you want to create the host - device mapping dict
@@ -152,7 +152,8 @@ def network_etl(parent_dag_name, child_dag_name, start_date, schedule_interval):
 	  		provide_context=True,
 	 		python_callable=extract_and_distribute,
 			params={"ip":machine.get('ip'),"port":site.get('port')},
-			dag=dag_subdag
+			dag=dag_subdag,
+			queue = celery_queue
 			)
 	return 	dag_subdag
 
