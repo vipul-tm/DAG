@@ -76,6 +76,7 @@ format_etl = SubDagOperator(
     subdag=format_etl(PARENT_DAG_NAME, CHILD_DAG_NAME_FORMAT, datetime(2017, 2, 24),main_etl_dag.schedule_interval,Q_PRIVATE),
     task_id=CHILD_DAG_NAME_FORMAT,
     dag=main_etl_dag,
+    queue=Q_PRIVATE
     )
 #topology_etl = SubDagOperator(
 #    subdag=topology_etl(PARENT_DAG_NAME, CHILD_DAG_NAME_TOPOLOGY, datetime(2017, 2, 24),main_etl_dag.schedule_interval),
