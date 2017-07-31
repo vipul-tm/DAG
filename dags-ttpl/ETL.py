@@ -65,12 +65,15 @@ debug_mode = eval(Variable.get("debug_mode"))
 network_etl = SubDagOperator(
     subdag=network_etl(PARENT_DAG_NAME, CHILD_DAG_NAME_NETWORK, datetime(2017, 2, 24),main_etl_dag.schedule_interval,Q_PUBLIC),
     task_id=CHILD_DAG_NAME_NETWORK,
-    dag=main_etl_dag
+    dag=main_etl_dag,
+    queue=Q_PUBLIC
     )
 service_etl = SubDagOperator(
     subdag=service_etl(PARENT_DAG_NAME, CHILD_DAG_NAME_SERVICE, datetime(2017, 2, 24),main_etl_dag.schedule_interval,Q_PUBLIC),
     task_id=CHILD_DAG_NAME_SERVICE,
     dag=main_etl_dag,
+    queue=Q_PUBLIC
+
     )
 format_etl = SubDagOperator(
     subdag=format_etl(PARENT_DAG_NAME, CHILD_DAG_NAME_FORMAT, datetime(2017, 2, 24),main_etl_dag.schedule_interval,Q_PRIVATE),
@@ -89,6 +92,7 @@ device_down_etl = SubDagOperator(
     subdag=device_down_etl(PARENT_DAG_NAME, CHILD_DAG_NAME_DEVICE_DOWN, datetime(2017, 2, 24),main_etl_dag.schedule_interval,Q_PUBLIC),
     task_id=CHILD_DAG_NAME_DEVICE_DOWN,
     dag=main_etl_dag,
+    queue=Q_PUBLIC
     )
 # events = SubDagOperator(
 #     subdag=calculate_events(PARENT_DAG_NAME, CHILD_DAG_NAME_EVENTS, datetime(2017, 2, 24),main_etl_dag.schedule_interval),
