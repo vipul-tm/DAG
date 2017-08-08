@@ -69,7 +69,7 @@ class List2DictTransformer(BaseOperator):
 			converted_dict = {}
 			for key in skeleton_dict:
 				converted_dict[key] = data_values[int(skeleton_dict.get(key))]
-				transformed_data.append(converted_dict)
+				transformed_data.append(converted_dict.copy())
 
 		if indexed:
 			redis_conn.add_event_by_key(self.identifier_output,transformed_data,{self.output_identifier_index:self.output_identifier_index})

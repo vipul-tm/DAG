@@ -243,3 +243,57 @@ def get_time():
 def subtract_time(start_time):
 	diff_time = time.time() - start_time 
 	return int(diff_time)
+
+	#####################TEMPORARY####################
+def get_bs_all(ip_add):
+	return ['10.23.12.22']
+def send_data_to_kafka(ip_add):
+	nw_keys = redis_hook_4.get_keys("nw_agg_nocout_*")
+	sv_keys = redis_hook_4.get_keys("sv_agg_nocout_*")
+	debug_file_path_nw = "/home/tmadmin/nw.debg"
+	debug_file_path_sv = "/home/tmadmin/sv.debg"
+	skeleton_dict = {}
+	skeleton_dict_bs = {}
+	
+				
+
+	ip_add_bs = get_bs_all(ip_add)
+	for key in nw_keys:
+		data = redis_hook_4.rget(key)
+		ip_list = []
+		ip_list_bs = []
+		for slot in data:
+			slot = eval(slot)
+			for k,v in enumerate(slot):
+				slot[k] = eval (v)
+				for services in slot:
+					if services.get('ip_address') in ip_add:
+						ip_address = services.get('ip_address')
+						skeleton_dict['ip_address'] = ip_address
+						skeleton_dict['service'] = services.get('ds')
+						skeleton_dict['cur'] = services.get('cur')
+						ip_list.append(skeleton_dict.copy())
+				
+					elif services.get('ip_address') in ip_add_bs:
+						bs_ip_address = services.get('ip_address')	
+						ss_ip = ip_add_bs.index(bs_ip_address)
+						skeleton_dict_bs['bs_ip_address'] = bs_ip_address
+						skeleton_dict_bs['ss_ip_address'] = ip_add[ss_ip]
+						skeleton_dict_bs['service'] = services.get('ds')
+						skeleton_dict_bs['cur'] = services.get('cur')
+						ip_list_bs.append(skeleton_dict_bs.copy())
+	net_list = []
+	net_dict = {}
+	for bs in ip_list_bs:
+		
+		net_dict['base_station_%s'%(bs.get('service'))] = bs.get('cur')
+		net_dict['ss_ip'] = bs.get('ss_ip_address')
+		net_dict['bs_ip'] = bs.get('bs_ip_address')
+		net_dict['ss_ip'] = bs.get('ss_ip_address')
+		for ss in ip_list:
+			if ss.get('ip_address') == net_dict['ss_ip']:
+				net_dict["ss_%s"%(ss.get('service'))] = ss.get('cur')
+
+		net_list.append(net_dict.copy())
+
+			
