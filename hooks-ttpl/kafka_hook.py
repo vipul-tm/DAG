@@ -14,7 +14,8 @@
 from kafka import KafkaClient
 from kafka import KafkaProducer
 from kafka import KafkaConsumer
-
+import pykafka
+from pykafka import KafkaClient
 
 from airflow.hooks.base_hook import BaseHook
 
@@ -33,11 +34,11 @@ class KafkaHook(BaseHook):
         #self.schema = kwargs.pop("schema", None)
         self.kafka_conn_id = kafka_conn_id
         self.conn = self.get_connection(kafka_conn_id)
-
+	self.cnx = KafkaClient('localhost:9092')
 
     def get_conn_obj(self):
         conn_config = {
-            "host": self.conn.host or 'localhost',
+            "host": self.conn.host or '10.133.12.163',
             "topic": self.conn.schema or 'default'
         }
 
@@ -47,26 +48,52 @@ class KafkaHook(BaseHook):
             conn_config["port"] = int(self.conn.port)
         return conn_config
 
+    def get_kafka_consumer(self,topic,consumer_group=None):
+        #self.consumer_group = consumer_group
+        print topic,consumer_group
+        try:
+            topic_instance = self.cnx.topics[topic]
+            print topic_instance
+            if topic_instance is not None:
+                s = topic_instance.get_balanced_consumer(consumer_group,
+                        auto_commit_enable=True, reset_offset_on_start=True)
+                return s
+        except Exception,e:
+            print "Error in getting consumer from topic,Invalid Topic"
+            print repr(e)
+        print "Nitin after consumer"
+
+    def get_kafka_producer(self,topic):
+	print "In kafka producer"
+        try:
+            topic_instance = self.cnx.topics[topic]
+            if topic_instance is not None:
+                prod = topic_instance.get_producer()
+		return prod
+        except Exception,e:
+	    print 'Error in getting producer'
+            print e
+
+
+
+    """
 
     def get_kafka_producer(self):
-        """
-        Returns a kafka producer object
-        """
         conn_config = self.get_conn_obj()
-        producer = KafkaProducer(bootstrap_servers=conn_config.get('hosts')+":"+conn_config.get('port'))
+        #print conn_config
+        producer = KafkaProducer(bootstrap_servers=conn_config.get('host')+":"+str(conn_config.get('port')))
+        #producer = KafkaProducer(bootstrap_servers='localhost:2181')
         return producer
 
     def get_kafka_consumer(self,topic):
-        """
-        Returns a kafka consumer object
-        """
         conn_config = self.get_conn_obj()
-        kafka = KafkaClient(conn_config.get('host')+":"+str(conn_config.get('port')))
+        kafka = KafkaClient(str(conn_config.get('host'))+":"+str(conn_config.get('port')))
+        #kafka = KafkaClient(str('localhost')+":"+str('2181'))
         
         consumer = KafkaConsumer(topic)
         return consumer
         
-
+    """
 	#to set redis ey
     def publish(self,producer,topic,value):
         producer.send(topic, value)    

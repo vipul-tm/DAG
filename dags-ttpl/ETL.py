@@ -1,5 +1,6 @@
 from airflow import DAG
 from airflow.operators import PythonOperator
+from airflow.operators import DummyOperator
 from datetime import datetime, timedelta    
 from airflow.models import Variable
 from airflow.operators.subdag_operator import SubDagOperator
@@ -9,12 +10,14 @@ from subdags.format import format_etl
 from subdags.device_down_etl import device_down_etl
 from subdags.topology import topology_etl
 from subdags.events import calculate_events
-from  etl_tasks_functions import get_required_static_data
+
 from etl_tasks_functions import init_etl
 from etl_tasks_functions import debug_etl
+from etl_tasks_functions import send_data_to_kafka
 from airflow.operators import ExternalTaskSensor
 from airflow.operators import MemcToMySqlOperator
 from celery.signals import task_prerun, task_postrun
+from airflow.operators.kafka_extractor_operator import KafkaExtractorOperator
 
 #TODO: Commenting Optimize
 #######################################DAG CONFIG####################################################################################################################
@@ -22,7 +25,7 @@ from celery.signals import task_prerun, task_postrun
 default_args = {
     'owner': 'wireless',
     'depends_on_past': False,
-    'start_date': datetime.now() - timedelta(minutes=2),
+    'start_date': datetime.now() - timedelta(minutes=5),
     #'email': ['vipulsharma144@gmail.com'],
     'email_on_failure': False,
     'email_on_retry': False,
@@ -53,10 +56,12 @@ NW_DB_COLUMNS = "machine_name,current_value,service_name,avg_value,max_value,age
 SV_DB_COLUMNS = "machine_name,site_name,critical_threshold,device_name,ip_address,data_source,current_value,check_timestamp,severity,service_name,age,sys_timestamp,warning_threshold,refer,avg_value,max_value,min_value"
 
 CHILD_DAG_NAME_FORMAT = "FORMAT"
-main_etl_dag=DAG(dag_id=PARENT_DAG_NAME, default_args=default_args, schedule_interval='*/2 * * * *',)
+main_etl_dag=DAG(dag_id=PARENT_DAG_NAME, default_args=default_args, schedule_interval='*/5 * * * *',)
 system_config=eval(Variable.get('system_config'))
 databases=eval(Variable.get('databases'))
 debug_mode = eval(Variable.get("debug_mode"))
+ml_mode = eval(Variable.get("ml_mode"))
+services = eval(Variable.get('ml_services'))
 #######################################DAG Config Ends ####################################################################################################################
 ###########################################################################################################################################################################
 #######################################TASKS###############################################################################################################################
@@ -76,10 +81,10 @@ service_etl = SubDagOperator(
 
     )
 format_etl = SubDagOperator(
-    subdag=format_etl(PARENT_DAG_NAME, CHILD_DAG_NAME_FORMAT, datetime(2017, 2, 24),main_etl_dag.schedule_interval,Q_PRIVATE),
+    subdag=format_etl(PARENT_DAG_NAME, CHILD_DAG_NAME_FORMAT, datetime(2017, 2, 24),main_etl_dag.schedule_interval,Q_PUBLIC),
     task_id=CHILD_DAG_NAME_FORMAT,
     dag=main_etl_dag,
-    queue=Q_PRIVATE
+    queue=Q_PUBLIC
     )
 #topology_etl = SubDagOperator(
 #    subdag=topology_etl(PARENT_DAG_NAME, CHILD_DAG_NAME_TOPOLOGY, datetime(2017, 2, 24),main_etl_dag.schedule_interval),
@@ -100,13 +105,8 @@ device_down_etl = SubDagOperator(
 #     dag=main_etl_dag,
 #     )
 
-get_static_data = PythonOperator(
-    task_id="getThresholds_severity",
-    provide_context=False,
-    python_callable=get_required_static_data,
-    #params={"redis_hook_2":redis_hook_2},
-    dag=main_etl_dag,
-    queue=Q_PUBLIC)
+
+
 
 initiate_etl = PythonOperator(
     task_id="Initiate",
@@ -115,6 +115,29 @@ initiate_etl = PythonOperator(
     #params={"FORMAT_QUEUE":FORMAT_QUEUE},
     dag=main_etl_dag,
     queue=Q_PUBLIC)
+if ml_mode:
+    kafka_extractor = KafkaExtractorOperator(
+        task_id="push",    
+        #python_callable = upload_service_data_mysql,
+        dag=main_etl_dag,
+        redis_conn='redis_hook_4',
+        kafka_con_id='kafka_default',
+        topic='ml_queue',
+        identifier_output='redID',
+        output_identifier_index='redIDInd',
+        index_key='timestamp',
+        #skeleton_dict={'b':'t'},
+        indexed=False,
+        queue=Q_PUBLIC
+        )
+    kafka_producer = PythonOperator(
+        task_id="push_data_to_kafka",
+        provide_context=False,
+        python_callable=send_data_to_kafka,
+        #params={"redis_hook_2":redis_hook_2},
+        dag=main_etl_dag,
+        queue=Q_PUBLIC)
+
 if debug_mode:
     debug_data= PythonOperator(
     task_id="DEBUG",
@@ -223,26 +246,46 @@ for db in databases:
     dag=main_etl_dag,
     queue=Q_PUBLIC,
     )
+    
+
+
+
     service_sensor >> insert_sv_data
     network_sensor >> insert_nw_data
     network_sensor >> update_nw_data
     service_sensor >> update_sv_data
     network_etl >> network_sensor
     service_etl >> service_sensor
+
+    if ml_mode:
+        insert_sv_data >> kafka_producer
+        insert_nw_data >> kafka_producer
+        #update_sv_data >> kafka_producer
+        #update_nw_data >> kafka_producer
+
+
+   
     if debug_mode:
         insert_sv_data >> debug_data
         insert_nw_data >> debug_data
-        update_nw_data >> debug_data
-        update_sv_data >> debug_data
+        #update_nw_data >> debug_data
+        #update_sv_data >> debug_data
+
+
 
 initiate_etl >> device_down_etl
 device_down_etl >> service_etl
 #device_down_etl >> topology_etl
 initiate_etl >> network_etl
-initiate_etl >> get_static_data
-initiate_etl >> format_etl
 
-get_static_data >> format_etl
+initiate_etl >> format_etl
+if ml_mode:
+    ml = DummyOperator(task_id='Process_ml', dag=main_etl_dag, queue=Q_PUBLIC)
+    kafka_producer >> ml >> kafka_extractor
+
+
+
+
 #format_etl >> events
 
 

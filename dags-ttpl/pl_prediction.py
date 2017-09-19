@@ -1,0 +1,439 @@
+import os
+import csv
+import pandas as pd
+from time import sleep
+from sklearn.svm import SVR
+from scipy import signal
+import numpy as np
+import copy
+import cPickle
+import logging
+import time
+from collections import OrderedDict,namedtuple
+from sklearn import linear_model
+from airflow.hooks import RedisHook
+from airflow.hooks import  MemcacheHook
+from airflow.operators import MySqlLoaderOperator 
+from datetime import datetime
+
+from airflow.operators import PythonOperator
+from datetime import datetime, timedelta
+from airflow.models import Variable
+from os.path import dirname
+memc_con = MemcacheHook(memc_cnx_id = 'memc_cnx')
+redis_hook_4 = RedisHook(redis_conn_id="redis_hook_4")
+Q_PUBLIC = "poller_queue"
+PL_PREDICTION_DAG_NAME = "pl_prediction"
+#Old model path=/omd/airflow_etl/venv_air/my_dumped_classifier_2_with_thresholding_gauss_selective_201_c_1_g_.00003_e_0.1.pkl
+
+class ml_classifier(object):
+
+    def __init__(self):
+       # self.ml_clf = clf(**params) 
+       pass
+
+    def gather(self):
+        pass
+
+    def preprocess(self,data):
+        pass
+
+    def format_data(self,data_dict):
+	pass
+
+
+
+    def train(self,x,y):
+        self.train_model = self.ml_clf.fit(x,y)
+        
+    def predict(self,clf,x):
+	if self.ml_clf:
+	    out = self.train_model.predict(x)
+
+    def plot_results(self, out):
+	pass
+
+    def test(self):
+        pass
+
+class ml_tf_implementer(ml_classifier):
+
+    def __init__(self,**args):
+        self.network_key = args['network_key']
+        self.service_key = args['service_key']
+	self.services = args['services']
+	self.cam_services = args['cam_services']
+	#self.out_file = args['out_file']
+
+	self.path = os.path.join(dirname(os.path.dirname(os.path.abspath(__file__))) ,'machine_learning/data_sets')
+	self.cam_path = os.path.join(dirname(os.path.dirname(os.path.abspath(__file__))) ,'machine_learning/cam_data_sets')
+	self.model_dir  = os.path.join(dirname(os.path.dirname(os.path.abspath(__file__))),'machine_learning/model_dir')
+
+    def store_hist_data(self,data,cam_data):
+	# Store data to CSV file  ,Later tobe read by scikit model to train
+	if cam_data:
+	    prediction_data_list = []
+	    cam_data_list = []
+	    d = datetime.now()
+	    current_time = d.strftime('%Y-%m-%d-%H:%M:%S')
+	    file_name =  "".join([str(current_time) , ".csv"])
+	    cam_file_name = "cambium_data"
+	    file_path = os.path.join(self.path,file_name)
+	    cam_file_path = os.path.join(self.cam_path,cam_file_name)
+	    logging.error(cam_data)
+	    with open(file_path,'w') as out:
+    	        csv_out=csv.writer(out)
+    	        for row in data:
+        	    csv_out.writerow(row[:-2])
+        	    prediction_data_list.append(row)
+	    with open(cam_file_path,'a') as out:
+	        csv_out_1 = csv.writer(out)
+	        csv_out_1.writerow(cam_data)
+	        logging.error(cam_data)
+       	    # Publish data to redis to predict on current ml model
+       	    machine = self.network_key.split('_')[-1]
+       	    key = "pl_features_%s" % machine 
+            redis_hook_4.set(key,prediction_data_list)
+		
+
+    def store_mapping(self,host_ip_dict):
+	#print host_ip_dict.keys()
+	bs_ss_mapping = {}
+        for host in host_ip_dict.keys():
+	    key = "%s_conn_ss" % host
+	    ss_dict = memc_con.get(key)
+	    if ss_dict:
+	        ss_list1 = ss_dict.get(1,[]) 
+	        ss_list2 = ss_dict.get(2,[])
+	        ss_list = ss_list1 + ss_list2
+	        bs_ss_mapping[host_ip_dict[host]] = ss_list
+	self.bs_ss_mapping = bs_ss_mapping
+
+    def gather(self):
+	# collect data from input resources Redis,KAfka
+	# Currently predicting Pl loss 
+        # Features requires - bs_pl, ps_rta, wimax_pmp1_ul_util_bgp,wimax_pmp2_ul_util_bgp,wimax_pmp1_dl_util_bgp,
+	#wimax_pmp2_dl_util_bgp,
+	# ss_pl, ss_rta,wimax_ul_rssi,wimax_dl_rssi,wimax_ul_cinr,wimax_dl_cinr,wimax_ul_intrf,wimax_dl_intrf,
+	#wimax_ss_ul_utilization,
+	# wimax_ss_dl_utilization]
+        #candidates:   ip_list to monitor
+        #features:  features to monitor
+  
+        # Selective ips to be modeled
+        #ip_add = eval(Variable.get('ml_ss_list'))
+  	final_dict = {} 
+        network_data = redis_hook_4.rget(self.network_key)
+	service_data = redis_hook_4.rget(self.service_key)
+	self.ip_host_mapping = {}
+	self.bs_host_ip_mapping = {}
+        self.preprocess(network_data,final_dict,type_key = 'network') 
+        self.preprocess(service_data,final_dict,type_key = 'service')
+
+	self.store_mapping(self.bs_host_ip_mapping)
+        logging.info(final_dict)
+
+	machine = self.network_key.split('_')[-1]
+	redis_hook_4.set("pl_prediction_raw_%s" % machine,final_dict)
+	redis_hook_4.set("bs_ss_mapping_%s" % machine,self.bs_ss_mapping)
+	redis_hook_4.set("ip_host_mapping_%s" % machine,self.ip_host_mapping)
+	#self.format_data()
+
+    def format_data(self):
+	"""
+	In: final_dict ---> which contains information of serices for base station and sub station 
+
+	e.g : final_dict['10.203.23.34'] = {'pl':5,'rta':23,'wimax_dl_rssi': -2,'wimax_ul_rssi': -34,'wimax_ul_cinr': 2 }...
+	      final_dict['10.203.23.4'] = {'bs_pl': 5,'bs_rta':34,'wimax_pm1_dl_util_bgp':0.22}...	
+
+	"""
+	ml_features = namedtuple('ml_features', 'bs_pl bs_rta pmp1_ul_util pmp2_ul_util ' +
+	    'pmp1_dl_util pmp2_dl_util pl rta ul_rssi dl_rssi ul_cinr dl_cinr ul_intrf dl_intrf ' +
+	    'ul_util dl_util ss_ip hostname')
+	#ss_bs_dict = self.ss_bs_mapping
+	machine =  self.network_key.split('_')[-1]
+        key  = "".join(["pl_prediction_raw_",machine])
+        mapping_key  = "".join(["bs_ss_mapping_",machine])
+	ip_host_mapping_key = "".join(["ip_host_mapping_",machine]) 
+	bs_ss_dict = redis_hook_4.get(mapping_key)
+        final_dict = redis_hook_4.get(key)
+        ip_host_mapping = redis_hook_4.get(ip_host_mapping_key)
+	try:
+	    bs_ss_dict = eval(bs_ss_dict)
+	    final_dict = eval(final_dict)
+	    ip_host_mapping = eval(ip_host_mapping)
+	    #logging.info('ip host mapping %s ----- %s' % (ip_host_mapping_key,type(ip_host_mapping)))
+	    #logging.info('final dict %s' % final_dict)
+	except Exception,e:
+	    logging.info(e)
+	    return
+	ordered_svc_dict = OrderedDict()
+	result_dict = {}
+	try:
+	    ip_dict = final_dict.get('10.193.123.18')
+	    cur_time = int(time.time())
+	    cam_ip_val = (cur_time,ip_dict['pl'])
+	except Exception,e:
+	    cam_ip_val = ()
+	    logging.error(e)
+	for ip in bs_ss_dict:
+	    ss_list = bs_ss_dict.get(ip)
+	    try:
+	        if final_dict.get(ip):
+	            final_dict[ip]['bs_pl'] = final_dict[ip].pop('pl')
+	            final_dict[ip]['bs_rta'] = final_dict[ip].pop('rta')
+	        else:
+		    continue
+	    except Exception,e:
+	    	logging.info("Error in bs dict %s" % e)
+	    	logging.info("Final bs dict %s" % final_dict.get(ip))
+	    	continue
+	    for ss_ip in ss_list:
+		if final_dict.get(ss_ip):
+		    final_dict[ss_ip].update(final_dict[ip])	
+		    result_dict[ss_ip] =  final_dict[ss_ip]
+
+	final_ip_list = []
+	for ss_ip in result_dict:
+	    if len(result_dict[ss_ip]) != 16:
+	        continue
+	    value = (result_dict[ss_ip]['bs_pl'],result_dict[ss_ip]['bs_rta'],
+		result_dict[ss_ip].get('wimax_pmp1_ul_util_bgp',0),
+		result_dict[ss_ip].get('wimax_pmp2_ul_util_bgp',0),
+		result_dict[ss_ip].get('wimax_pmp1_dl_util_bgp',0),
+		result_dict[ss_ip].get('wimax_pmp2_dl_util_bgp',0),
+		result_dict[ss_ip]['pl'],
+		result_dict[ss_ip]['rta'], 
+		result_dict[ss_ip]['wimax_ul_rssi'],
+		result_dict[ss_ip]['wimax_dl_rssi'],
+		result_dict[ss_ip]['wimax_ul_cinr'],
+		result_dict[ss_ip]['wimax_dl_cinr'],
+		result_dict[ss_ip]['wimax_ul_intrf'],
+		result_dict[ss_ip]['wimax_dl_intrf'],
+		result_dict[ss_ip]['wimax_ss_ul_utilization'],
+		result_dict[ss_ip]['wimax_ss_dl_utilization'],
+		ss_ip,
+		ip_host_mapping.get(ss_ip)
+		)
+	    final_ip_list.append(value)
+
+
+	self.store_hist_data(final_ip_list,cam_ip_val)
+
+    def preprocess(self,data,final_dict,type_key):
+ 	"""
+	
+	Data has slots with services in it
+
+	"""
+	#change labels for some services value <--------------->
+	# Service: wimax_dl_intrf,wimax_ul_intrf
+	special_services = ['wimax_dl_intrf','wimax_ul_intrf']
+	ap_services = ['wimax_pmp1_dl_util_bgp']
+	change_dict = {'Norm':0 ,'Warn': 1 ,'Crit':2}
+
+	# IP list for which live data is coming ,excluding the down devices
+	live_ip_list = []
+	if type_key == 'network':
+	    key = 'ds'
+	else:
+	    key = 'service'	   
+	ip_host_mapping = self.ip_host_mapping
+        bs_host_ip_dict = self.bs_host_ip_mapping
+	for slot in data:
+	    slot = eval(slot)
+	    for service_dict in slot:
+		#print service_dict
+		service_dict =  eval(service_dict)
+		ip = service_dict.get('ip_address')
+		svc_ds  = service_dict.get('ds')	
+		svs_name  = service_dict.get('service')
+		host = service_dict.get('host')
+		if svs_name in self.services:
+		    if svs_name in special_services:
+			service_dict['cur'] = change_dict.get(service_dict['cur']) \
+					if service_dict.get('cur') in change_dict.keys() else 0
+		    if svs_name in ap_services:
+			bs_host_ip_dict[str(host)] = ip
+		    if ip in final_dict:
+		    	final_dict[ip].update({service_dict.get(key):service_dict.get('cur')})
+		    else:
+			final_dict[ip] = {service_dict.get(key):service_dict.get('cur')}
+		    ip_host_mapping[ip] = str(host)
+	self.ip_host_mapping = ip_host_mapping
+	self.bs_host_ip_mapping = bs_host_ip_dict
+	#return bs_host_ip_dict
+
+    def cambium_test_data(self,**kwargs):
+    	dag_obj = kwargs.get('dag')
+    	network_dict = {}
+    	mysql_data = []
+	for file_name in os.listdir(self.cam_path):
+	    df = pd.read_csv(os.path.abspath(os.path.join(self.cam_path,file_name)),sep=r",", header = None)
+	    df = df.fillna(0)
+	df.columns = ['time','val']
+        timestamp_hour_dict=OrderedDict()
+        final_dict = OrderedDict()
+        time_s = df['time'].values
+        pl = df['val'].values
+        print time_s,pl
+    	for i,v in zip(time_s,pl):
+    	    #print i,v
+    	    if int(v)!= 0 and str(i) != 'nan':
+            	j_t= datetime.fromtimestamp(i)
+            	j_t= j_t.replace(year=2017,second=0)
+            	if j_t.minute % 60 != 0:
+            	    j_t=  j_t + timedelta(minutes=-(j_t.minute % 60)) + timedelta(hours=1)
+            	t_1= time.mktime(j_t.timetuple())
+            	if t_1 not in timestamp_hour_dict:
+            	    timestamp_hour_dict[t_1] = 1
+            	else:
+            	    timestamp_hour_dict[t_1] = timestamp_hour_dict[t_1] + 1
+    	    elif str(i) != 'nan':
+            	j_t=datetime.fromtimestamp(i)
+            	j_t= j_t.replace(year=2017,second=0)
+            	j_t=  j_t + timedelta(minutes=-(j_t.minute % 60)) + timedelta(hours=1)
+            	t_1= time.mktime(j_t.timetuple())
+            	if t_1 not in timestamp_hour_dict:
+            	    timestamp_hour_dict[t_1] = 0
+        timestamp_hour_dict = sorted(timestamp_hour_dict.items(), key=lambda p: p[0])
+        print timestamp_hour_dict
+	#for k,v in timestamp_hour_dict:
+    	#    print time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(k)) , v
+	for key,val in timestamp_hour_dict:
+    	    if val >= 1:
+                state = 1
+            else:
+                state = 0
+            final_dict[key] = state
+	logreg = linear_model.LogisticRegression(C=1e5)
+	l = [[i] for i in range(1,len(final_dict.keys())+1) ]
+	last_time = final_dict.keys()[-1]
+	last_time = last_time + 3600
+	logging.error('lenght of toal hours %s %s %s' % (len(l),final_dict.values()[-1],last_time))
+	logreg.fit(l,final_dict.values())
+	prediction = logreg.predict(len(l)+1)
+	if prediction != '' and prediction != None:
+	    if prediction ==0 :
+	        severity = 'up'
+	        value = 0
+	    else:
+	        severity = 'down'
+	        value = 100
+	network_dict['severity'] = severity
+        network_dict['site'] = 'ospf2_slave_1'
+        network_dict['host'] = "28471"
+        network_dict['service'] = 'ping'
+        network_dict['ip_address'] = "10.193.123.18"
+        network_dict['age'] = ''
+        network_dict['ds'] = 'pl'
+        network_dict['cur'] = value 
+        network_dict['war'] = 10
+        network_dict['cric'] = 50
+        network_dict['check_time'] = last_time
+        network_dict['local_timestamp'] = last_time
+        network_dict['refer'] = ''
+        network_dict['min_value'] = 0
+        network_dict['max_value'] = 100
+        network_dict['avg_value'] = 50
+        network_dict['machine_name'] = "ospf2"
+        mysql_data.append(network_dict.copy())
+    	query_nw = "INSERT INTO performance_performancenetwork_predicted "
+    	query_nw +="(machine_name,current_value,service_name,avg_value,max_value,age,min_value,site_name,data_source,\
+    	critical_threshold,device_name,severity,sys_timestamp,ip_address,warning_threshold,check_timestamp,refer) values \
+    	(%(machine_name)s,%(cur)s,%(service)s,%(avg_value)s,%(max_value)s,%(age)s,%(min_value)s,%(site)s,%(ds)s,%(cric)s,\
+    	%(host)s,%(severity)s,%(local_timestamp)s,%(ip_address)s,%(war)s,%(check_time)s,%(refer)s)"  
+	
+	mysql_conn_id='mysql_%s' % "ospf2"
+	mysql_pl_predicted_data = MySqlLoaderOperator(task_id='pl_prediction_mysql_insert',query=query_nw,data=mysql_data,
+			mysql_conn_id=mysql_conn_id,queue=Q_PUBLIC,dag=dag_obj)
+	mysql_pl_predicted_data.execute(dag_obj)
+        logging.info('After prediction$$$ --%s %s' % ("ospf2",mysql_data))
+	
+
+
+
+
+	    
+
+    def test(self,**kwargs):
+    	
+    	dag_obj = kwargs.get('dag')
+	machine =  self.network_key.split('_')[-1]
+        key  = "".join(["pl_features_",machine])
+        mysql_data = []
+        # Extract features of pl testing dag
+        try:
+            live_data_list = redis_hook_4.get(key)
+	    f = open(Variable.get('ml_classifier_path'),"rb")
+            svr = cPickle.load(f)
+        except Exception,e:
+            print e
+            logging.info('Error in getting ml classifier %s' % e)
+	else:
+	    print "In Else"
+	    try:
+	    	logging.info('Features %s' % live_data_list)
+		live_data_list = eval(live_data_list)
+	    except Exception,e:
+	        logging.info('Error in getting eval data from redis %s' % e)
+	        return 
+	    for live_entry in live_data_list:
+                print "IN for"
+                network_dict = {}
+                try:
+                    live_entry = np.array(live_entry)
+	            prediction = svr.predict(live_entry[:-2])
+	            prediction = int(prediction[0])
+                    #logging.info('Live data %s %s' % (str(live_entry),str(prediction)))
+	        except Exception,e:
+	            logging.info("Error in prediction %s " % str(e))
+	            continue
+	        if prediction != '' and prediction != None:
+	            if prediction < 0 :
+	                prediction =  0
+	            if prediction <= 10:
+	                severity = 'ok'
+	            elif prediction > 10 and prediction < 50:
+	                severity = 'warning'
+	            else:
+	                severity = 'critical'
+	        network_dict['severity'] = severity
+                network_dict['site'] = 'ospf1_slave_1'
+                network_dict['host'] = live_entry[-1]
+                network_dict['service'] = 'ping'
+                network_dict['ip_address'] = live_entry[-2]
+                network_dict['age'] = ''
+                network_dict['ds'] = 'pl'
+                network_dict['cur'] = prediction
+                network_dict['war'] = 10
+                network_dict['cric'] = 50
+                network_dict['check_time'] = int(time.time())
+                network_dict['local_timestamp'] = int(time.time())
+                network_dict['refer'] = ''
+                network_dict['min_value'] = 0
+                network_dict['max_value'] = 100
+                network_dict['avg_value'] = 50
+                network_dict['machine_name'] = machine
+                mysql_data.append(network_dict.copy())
+    		query_nw = "INSERT INTO performance_performancenetwork_predicted "
+    		query_nw +="(machine_name,current_value,service_name,avg_value,max_value,age,min_value,site_name,data_source,\
+    		critical_threshold,device_name,severity,sys_timestamp,ip_address,warning_threshold,check_timestamp,refer) values \
+    		(%(machine_name)s,%(cur)s,%(service)s,%(avg_value)s,%(max_value)s,%(age)s,%(min_value)s,%(site)s,%(ds)s,%(cric)s,\
+    		%(host)s,%(severity)s,%(local_timestamp)s,%(ip_address)s,%(war)s,%(check_time)s,%(refer)s)"  
+	        
+		mysql_conn_id='mysql_%s' % machine
+		print "----------"
+		
+		mysql_pl_predicted_data = MySqlLoaderOperator(
+			task_id='pl_prediction_mysql_insert',
+			query=query_nw,
+			data=mysql_data,
+			mysql_conn_id=mysql_conn_id,
+			queue=Q_PUBLIC,
+			dag=dag_obj
+			)
+		print dir(mysql_pl_predicted_data)
+		mysql_pl_predicted_data.execute(dag_obj)	
+	        logging.info('After prediction$$$ --%s %s' % (machine,mysql_data))
+		

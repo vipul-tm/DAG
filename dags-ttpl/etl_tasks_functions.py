@@ -3,108 +3,24 @@ from airflow.operators import MySqlOperator
 from airflow.hooks.mysql_hook import MySqlHook
 from airflow.hooks import RedisHook
 from airflow.hooks import  MemcacheHook
+from airflow.hooks import KafkaHook
 import socket
 import logging
 import csv #for debugging task
 import time
+from pprint import pprint
+import traceback
 SQLhook=MySqlHook(mysql_conn_id='application_db')
 redis_hook_4 = RedisHook(redis_conn_id="redis_hook_4")
 #redis_hook_5 = RedisHook(redis_conn_id="redis_hook_5")
 memc_con = MemcacheHook(memc_cnx_id = 'memc_cnx')
 databases = eval(Variable.get('databases'))
+kafka_hook =KafkaHook(kafka_conn_id = 'kafka_default')
 #############################################HELPERS################################################
-def dict_rows(cur):
-    desc = cur.description
-    return [
-        dict(zip([col[0] for col in desc], row))
-        for row in cur.fetchall()
-    ]
-
-def execute_query(query):
-	conn = SQLhook.get_conn()
-	cursor = conn.cursor()
-	cursor.execute(query)
-	data =  dict_rows(cursor)
-	cursor.close()
-	return data
-
-def createDict(data):
-	#TODOL There are 3 levels of critality handle all those(service_critical,critical,dtype_critical)
-	rules = {}
-	ping_rule_dict = {}
-	operator_name_with_operator_in = eval(Variable.get("special_operator_services")) #here we input the operator name in whcih we wish to apply IN operator
-	service_name_with_operator_in = []
-	for operator_name in operator_name_with_operator_in:
-		service_name = "_".join(operator_name.split("_")[:-1])
-		service_name_with_operator_in.append(service_name)
 
 
-	for device in data:
-		service_name = device.get('service')
-		device_type = device.get('devicetype')
-		if device.get('dtype_ds_warning') and device.get('dtype_ds_critical'):
-			device['critical'] = device.get('dtype_ds_critical')
-			device['warning'] = device.get('dtype_ds_warning')
-		elif device.get('service_warning') and device.get('service_critical'):
-			device['critical'] = device.get('service_critical')
-			device['warning'] = device.get('service_warning')
-		
-		if service_name:
-			name =  str(service_name)
-			rules[name] = {}
-		if device.get('critical'):
-			rules[name]={"Severity1":["critical",{'name': str(name)+"_critical", 'operator': 'greater_than', 'value': device.get('critical') or device.get('dtype_ds_critical')}]}
-		else:
-			rules[name]={"Severity1":["critical",{'name': str(name)+"_critical", 'operator': 'greater_than', 'value': ''}]}
-		if device.get('warning'):
-			rules[name].update({"Severity2":["warning",{'name': str(name)+"_warning", 'operator': 'greater_than', 'value': device.get('warning') or device.get('dtype_ds_warning')}]})
-		else:
-			rules[name].update({"Severity2":["warning",{'name': str(name)+"_warning", 'operator': 'greater_than', 'value': ''}]})
-		if device_type not in ping_rule_dict:
-			if device.get('ping_pl_critical') and device.get('ping_pl_warning') and device.get('ping_rta_critical') and device.get('ping_rta_warning'):
-				 ping_rule_dict[device_type] = {
-				'ping_pl_critical' : device.get('ping_pl_critical'),
-				'ping_pl_warning': 	 device.get('ping_pl_warning') ,
-				'ping_rta_critical': device.get('ping_rta_critical'),
-				'ping_rta_warning':  device.get('ping_rta_warning')
-				}
-	for device_type in  ping_rule_dict:
-		if ping_rule_dict.get(device_type).get('ping_pl_critical'):
-			rules[device_type+"_pl"]={}
-			rules[device_type+"_pl"].update({"Severity1":["critical",{'name': device_type+"_pl_critical", 'operator': 'greater_than', 'value': int(ping_rule_dict.get(device_type).get('ping_pl_critical')) or ''}]})
-			
-		if ping_rule_dict.get(device_type).get('ping_pl_warning'):
-			rules[device_type+"_pl"].update({"Severity2":["warning",{'name': device_type+"_pl_warning", 'operator': 'greater_than', 'value': int(ping_rule_dict.get(device_type).get('ping_pl_warning')) or ''}]})
-			rules[device_type+"_pl"].update({"Severity3":["up",{'name': device_type+"_pl_up", 'operator': 'less_than', 'value': int(ping_rule_dict.get(device_type).get('ping_pl_warning')) or ''},'AND',{'name': device_type+"_pl_up", 'operator': 'greater_than_equal_to', 'value': 0}]})
-			rules[device_type+"_pl"].update({"Severity4":["down",{'name': device_type+"_pl_down", 'operator': 'equal_to', 'value': 100}]})
-			
-		if ping_rule_dict.get(device_type).get('ping_rta_critical'):
-			rules[device_type+"_rta"] = {}
-			rules[device_type+"_rta"].update({"Severity1":["critical",{'name': device_type+"_rta_critical", 'operator': 'greater_than', 'value': int(ping_rule_dict.get(device_type).get('ping_rta_critical')) or ''}]})
-		if ping_rule_dict.get(device_type).get('ping_rta_warning'):
-			rules[device_type+"_rta"].update({"Severity2":["warning",{'name': device_type+"_rta_warning", 'operator': 'greater_than', 'value': int(ping_rule_dict.get(device_type).get('ping_rta_warning')) or ''}]})
-			rules[device_type+"_rta"].update({"Severity3":["ok",{'name': device_type+"_rta_up", 'operator': 'less_than', 'value': int(ping_rule_dict.get(device_type).get('ping_rta_warning'))},'AND',{'name': device_type+"_rta_up", 'operator': 'greater_than', 'value': 0 }]})
-		
-			#TODO: This is a seperate module should be oneto prevent re-looping ovver rules
-	for rule in rules:
-		if rule in set(service_name_with_operator_in):
-			#service_name = "_".join(rule.split("_")[0:4])
-			service_rules = rules.get(rule)
-			for i in range(1,len(service_rules)+1):		
-				severities = service_rules.get("Severity%s"%i)
-				for x in range(1,len(severities),2):
-					if severities[x].get("name") in operator_name_with_operator_in.keys():
-						severities[x]["operator"] = operator_name_with_operator_in.get(severities[x].get("name"))
-
-	return rules
 
 ###############################################ETL FUNCTIONS########################################################################################
-def get_required_static_data():
-	print ("Extracting Data")
-	service_threshold_query = Variable.get('q_get_thresholds')
-	data = execute_query(service_threshold_query)
-	rules_dict = createDict(data)
-	Variable.set("rules",str(rules_dict))
 
 
 def init_etl():
@@ -246,54 +162,220 @@ def subtract_time(start_time):
 
 	#####################TEMPORARY####################
 def get_bs_all(ip_add):
-	return ['10.23.12.22']
-def send_data_to_kafka(ip_add):
-	nw_keys = redis_hook_4.get_keys("nw_agg_nocout_*")
-	sv_keys = redis_hook_4.get_keys("sv_agg_nocout_*")
-	debug_file_path_nw = "/home/tmadmin/nw.debg"
-	debug_file_path_sv = "/home/tmadmin/sv.debg"
+	bs_list = eval(Variable.get('ml_bs_list'))
+	return bs_list
+
+def send_data_to_kafka():
+	#nw_keys = redis_hook_4.get_keys("nw_agg_nocout_ospf1")
+	#sv_keys = redis_hook_4.get_keys("sv_agg_nocout_ospf1")
+	logging.info("Starting Tasks")
 	skeleton_dict = {}
 	skeleton_dict_bs = {}
+	#ip_add = ['10.170.72.17','10.170.72.19','10.170.72.20','10.170.72.48','10.170.72.47','10.170.72.55','10.170.72.60','10.170.72.43','10.170.72.41'] #the ip ss to get data of
 	
-				
+	ip_add = eval(Variable.get('ml_ss_list'))
+
+	ip_list_ser = []
+	ip_list_bs_ser = []
+	ip_list = []
+	ip_list_bs = []	
+	services_list = ['wimax_pmp1_ul_util_bgp','wimax_pmp2_ul_util_bgp','wimax_pmp1_dl_util_bgp','wimax_pmp2_dl_util_bgp','wimax_ul_rssi','wimax_dl_rssi','wimax_ul_cinr','wimax_dl_cinr','wimax_ul_intrf','wimax_dl_intrf','wimax_ss_ul_utilization','wimax_ss_dl_utilization']
+	net_list = ['pl','rta']
+		
 
 	ip_add_bs = get_bs_all(ip_add)
-	for key in nw_keys:
-		data = redis_hook_4.rget(key)
-		ip_list = []
-		ip_list_bs = []
-		for slot in data:
-			slot = eval(slot)
-			for k,v in enumerate(slot):
-				slot[k] = eval (v)
-				for services in slot:
-					if services.get('ip_address') in ip_add:
-						ip_address = services.get('ip_address')
-						skeleton_dict['ip_address'] = ip_address
-						skeleton_dict['service'] = services.get('ds')
-						skeleton_dict['cur'] = services.get('cur')
-						ip_list.append(skeleton_dict.copy())
+	bs_ss_mapper = {}
+	for i,bs in enumerate(ip_add_bs):
+		if bs in bs_ss_mapper.keys():
+			bs_ss_mapper[bs].append(ip_add[i])
+		else:
+			bs_ss_mapper[bs] = [ip_add[i]]
+	print bs_ss_mapper
+
+	data = redis_hook_4.rget('nw_agg_nocout_ospf1')
+	st = time.time()
+	for slot in data:
+		slot = eval(slot)
+		for services in slot:
+			services =  eval(services)
+			try:					
+				cur_ip = services.get('ip_address')
 				
-					elif services.get('ip_address') in ip_add_bs:
-						bs_ip_address = services.get('ip_address')	
-						ss_ip = ip_add_bs.index(bs_ip_address)
-						skeleton_dict_bs['bs_ip_address'] = bs_ip_address
-						skeleton_dict_bs['ss_ip_address'] = ip_add[ss_ip]
-						skeleton_dict_bs['service'] = services.get('ds')
-						skeleton_dict_bs['cur'] = services.get('cur')
-						ip_list_bs.append(skeleton_dict_bs.copy())
-	net_list = []
-	net_dict = {}
-	for bs in ip_list_bs:
-		
-		net_dict['base_station_%s'%(bs.get('service'))] = bs.get('cur')
-		net_dict['ss_ip'] = bs.get('ss_ip_address')
-		net_dict['bs_ip'] = bs.get('bs_ip_address')
-		net_dict['ss_ip'] = bs.get('ss_ip_address')
-		for ss in ip_list:
-			if ss.get('ip_address') == net_dict['ss_ip']:
-				net_dict["ss_%s"%(ss.get('service'))] = ss.get('cur')
-
-		net_list.append(net_dict.copy())
-
+				if cur_ip in ip_add:
+					#logging.info("Got IP %s"%(cur_ip))
+					ip_address = services.get('ip_address')
+					skeleton_dict['ip_address'] = str(ip_address)
+					skeleton_dict['service'] = str(services.get('ds'))
+					skeleton_dict['cur'] = services.get('cur')
+					skeleton_dict['host'] = services.get('host')
+					ip_list.append(skeleton_dict.copy())
 			
+				if cur_ip in ip_add_bs:
+
+					logging.info("Got %s %s"%(cur_ip,services.get('cur')))
+					bs_ip_address = str(services.get('ip_address'))	
+					
+					for ss_ip in bs_ss_mapper.get(bs_ip_address):						
+						skeleton_dict_bs['bs_ip_address'] = str(bs_ip_address)
+						skeleton_dict_bs['ss_ip_address'] = ss_ip
+						skeleton_dict_bs['service'] = str(services.get('ds'))
+						skeleton_dict_bs['cur'] = services.get('cur')
+						skeleton_dict['host'] = services.get('host')
+						ip_list_bs.append(skeleton_dict_bs.copy())
+				else:
+					#print "Ignoring %s"%(cur_ip)
+					pass
+			except Exception:
+				continue
+
+	logging.info("%s Seconds Loop 1 done" %(time.time() - st))
+	
+	st = time.time()
+	sv_pre_data=[]
+
+	data_sv = redis_hook_4.rget('sv_agg_nocout_ospf1')
+	#print "SLotDAAAAAAAAAAAAAAAAAAAAAAAAA"
+	#print data_sv
+	for slots in data_sv:
+		print "slot"
+		slots = eval(slots)
+		print 22
+		print len(slots)
+		for services in slots:
+			#print 44
+			services = eval(services)
+			try:
+				#print services
+				sv_pre_data.append(services.copy())
+					
+			except Exception:
+				continue
+				traceback.print_exc()
+
+	logging.info("Step 2")
+	for services in sv_pre_data:
+		cur_ip = services.get('ip_address')
+		if cur_ip in ip_add:
+			#print 2,services.get('service')
+                        ip_address = services.get('ip_address')
+                        skeleton_dict['ip_address'] = str(ip_address)
+                        skeleton_dict['service'] = str(services.get('service'))
+                        skeleton_dict['cur'] = services.get('cur')
+                        skeleton_dict['host'] = services.get('host')
+                        ip_list_ser.append(skeleton_dict.copy())
+
+                if cur_ip in ip_add_bs:
+                        bs_ip_address = services.get('ip_address')
+                        ss_ip = ip_add_bs.index(bs_ip_address)
+                        for ss_ip in bs_ss_mapper.get(bs_ip_address):	
+	                        skeleton_dict_bs['bs_ip_address'] = str(bs_ip_address)
+	                        skeleton_dict_bs['ss_ip_address'] = ss_ip
+	                        skeleton_dict_bs['service'] = str(services.get('service'))
+	                        skeleton_dict_bs['cur'] = services.get('cur')
+	                        skeleton_dict['host'] = services.get('host')
+	                        ip_list_bs_ser.append(skeleton_dict_bs.copy())		
+
+
+
+	logging.info("%s Seconds Loop 2 done" %(time.time() - st))
+	
+	st = time.time()
+
+	all_data_dict = {}
+	print ip_list_bs
+	for x in ip_list :
+		if x.get('service') in net_list:
+			if x.get('ip_address') not in all_data_dict.keys():
+				all_data_dict[x.get('ip_address')] = {
+
+				"ss_%s"%(x.get('service')):x.get('cur'),
+				"ip_address":x.get('ip_address'),
+				"host":x.get('host')
+				}
+			else:
+				all_data_dict.get(x.get('ip_address')).update({"ss_%s"%(x.get('service')):x.get('cur')})
+
+
+	for x in ip_list_bs:
+		
+		if x.get('service') in net_list:
+			if x.get('ss_ip_address') not in all_data_dict.keys():
+				all_data_dict[x.get('ss_ip_address')] = {
+
+				'bs_%s'%(x.get('service')):x.get('cur')
+
+				}
+			else:
+				#logging.info("Updating for service -- > %s %s %s" %(x.get('service'),x.get('cur'),x.get('ss_ip_address')))
+				all_data_dict.get(x.get('ss_ip_address')).update({"bs_%s"%(x.get('service')):x.get('cur')})
+		else:
+			logging.info("Skipping for service -- > %s " %(x.get('service')))		
+
+
+	for x in ip_list_ser :
+		if x.get('service') in services_list:
+			if x.get('ip_address') not in all_data_dict.keys():
+				
+				all_data_dict[x.get('ip_address')] = {
+				"%s"%(x.get('service')):x.get('cur')
+				}
+			else:
+				
+				all_data_dict.get(x.get('ip_address')).update({"%s"%(x.get('service')):x.get('cur')})
+
+
+	for x in ip_list_bs_ser :
+		if x.get('service') in services_list:
+			
+			if x.get('ss_ip_address') not in all_data_dict.keys():
+				
+				all_data_dict[x.get('ss_ip_address')] = {
+				'%s'%(x.get('service')):x.get('cur')
+				}
+			else:
+				
+				all_data_dict.get(x.get('ss_ip_address')).update({"%s"%(x.get('service')):x.get('cur')})
+
+
+	
+	for ss_ip in all_data_dict:
+		dl_intrf = all_data_dict.get(ss_ip).get('wimax_dl_intrf')
+		ul_intrf = all_data_dict.get(ss_ip).get('wimax_ul_intrf')
+		all_data_dict.get(ss_ip)['wimax_dl_intrf'] = 0 if dl_intrf == 'Norm' else (1 if dl_intrf == 'War' else 2)
+		all_data_dict.get(ss_ip)['wimax_ul_intrf'] = 0 if ul_intrf == 'Norm' else (1 if ul_intrf == 'War' else 2)
+
+	logging.info("%s Seconds Loop 3 done" %(time.time() - st))
+	
+
+	final_data = []
+	print all_data_dict
+	for ss_ip in  all_data_dict:
+		logging.info("We are creating")
+		ss_ip = all_data_dict.get(ss_ip)
+		final_data.append((ss_ip.get('bs_pl'),
+			ss_ip.get('bs_rta'),
+			ss_ip.get('wimax_pmp1_ul_util_bgp'),
+			ss_ip.get('wimax_pmp2_ul_util_bgp'),
+			ss_ip.get('wimax_pmp1_dl_util_bgp'),
+			ss_ip.get('wimax_pmp2_dl_util_bgp'),
+			ss_ip.get('ss_pl'),
+			ss_ip.get('ss_rta'),
+			ss_ip.get('wimax_ul_rssi'),
+			ss_ip.get('wimax_dl_rssi'),
+			ss_ip.get('wimax_ul_cinr'),
+			ss_ip.get('wimax_dl_cinr'),
+			ss_ip.get('wimax_ul_intrf'),
+			ss_ip.get('wimax_dl_intrf'),
+			str(ss_ip.get('wimax_ss_ul_utilization')),
+			str(ss_ip.get('wimax_ss_dl_utilization')),
+			ss_ip.get('ip_address'),
+			ss_ip.get('host'),		
+			))
+		logging.info("we are done")
+		
+	try:
+		logging.info("Successfully pushed data of length %s %s"%(len(final_data) , final_data))
+		redis_hook_4.rpush("ml_queue_main",final_data)
+	except Exception,e:
+		logging.info("Error in producing data")
+		print e

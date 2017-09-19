@@ -151,11 +151,11 @@ bp = Blueprint(
 
 
 ml = MenuLink(
-    category='Wirelessone',
+    category='W1',
     name='UAT',
     url='http://10.133.12.163')
 ml2 = MenuLink(
-    category='Wirelessone',
+    category='W1',
     name='Production',
     url='http://121.244.255.107')
 # Defining the plugin class

@@ -7,6 +7,7 @@ from airflow.hooks import RedisHook
 from shutil import copyfile
 import logging
 
+import traceback
 default_args = {
     'owner': 'wireless',
     'depends_on_past': False,
@@ -36,27 +37,60 @@ def create_prev_state(**kwargs):
     
     #key = ospf1_slave_1_last_pl_info
     data = {}
-    for conn_id in [1,2,3,4,5]:
+    data_down = {}
+    for conn_id in [1,2,3,4,5,6,7]:
         redis_hook = RedisHook(redis_conn_id="redis_prev_state_%s"%conn_id)
-        for ds in ['pl','rta']:
+        if conn_id <= 5:
             for site in [1,2,3,4,5,6,7,8]:
-                data_redis = redis_hook.hgetall("ospf%s_slave_%s_last_%s_info"%(conn_id,site,ds))
-                key = "ospf%s_slave_%s_%s"%(conn_id,site,ds)
-                data[key] = data_redis
+                data_redis_down = redis_hook.hgetall("ospf%s_slave_%s_device_down"%(conn_id,site))
+                key = "ospf%s_slave_%s_down"%(conn_id,site)
+                data_down[key] = data_redis_down
+        elif conn_id == 6:
+            for site in [1,2,3,4,5,6]:
+                data_redis_prv_down = redis_hook.hgetall("vrfprv_slave_%s_device_down"%(site))
+                key = "ospf%s_slave_%s_down"%(conn_id,site)
+                data_down[key] = data_redis_prv_down
+        elif conn_id == 7:
+            for site in [1]:
+                data_redis_pub_down = redis_hook.hgetall("pub_slave_%s_device_down"%(site))
+                key = "ospf%s_slave_%s_down"%(conn_id,site)
+                data_down[key] = data_redis_pub_down
 
+        for ds in ['pl','rta']:
+            if conn_id <= 5:
+                for site in [1,2,3,4,5,6,7,8]:
+                    data_redis = redis_hook.hgetall("ospf%s_slave_%s_last_%s_info"%(conn_id,site,ds))
+                    key = "ospf%s_slave_%s_%s"%(conn_id,site,ds)
+                    data[key] = data_redis
+
+            elif conn_id == 6:
+                for site in [1,2,3,4,5,6]:
+                    data_redis_prv = redis_hook.hgetall("vrfprv_slave_%s_last_%s_info"%(site,ds))
+                    key = "ospf%s_slave_%s_%s"%(conn_id,site,ds)
+                    data[key] = data_redis_prv
+            elif conn_id == 7:
+                for site in [1]:
+                    data_redis_pub = redis_hook.hgetall("pub_slave_%s_last_%s_info"%(site,ds))
+                    key = "ospf%s_slave_%s_%s"%(conn_id,site,ds)
+                    data[key] = data_redis_pub
+                
     machine_state_list_pl = {}
     machine_state_list_rta = {}
+    machine_state_list_down = {}
     host_mapping = {}
+
 ##########################################################################################
     logging.info("Creating IP to Host Mapping from HOST to IP mapping")
     ip_mapping = get_ip_host_mapping()
     for host_name,ip in ip_mapping.iteritems():
         host_mapping[ip] = host_name
 
+   
     logging.info("Mapping Completed for %s hosts"%len(host_mapping))
     ######################################33###################################################
     for key in data:
         site_data = data.get(key)
+        #logging.info("FOR  %s is %s"%(key,len(key)))
         for device in site_data:
             host = host_mapping.get(device)
             if "pl" in key: 
@@ -64,13 +98,41 @@ def create_prev_state(**kwargs):
             elif "rta" in key:
                 machine_state_list_rta[host] = {'state':eval(site_data.get(device))[0],'since':eval(site_data.get(device))[1]}
 
+    i=0
+    for key in data_down:
+
+        site_data_down = data_down.get(key)
+        #print "%s ===== %s"%(key,len(site_data_down))
+        #logging.info("FOR  %s is %s"%(key,len(key)))
+        for device in site_data_down:
+
+            if site_data_down.get(device) != None and site_data_down.get(device) != {} :
+                try: 
+                    machine_state_list_down[device] = {'state':eval(site_data_down.get(device))[0],'since':eval(site_data_down.get(device))[1]}
+                except Exception:
+                    pass
+                    
+                    #logging.info("Device not found in the ")
+                    #print site_data_down.get(device)
+                    #traceback.print_exc()
+            else:
+                logging.info("Data not present for device %s "%(host))
+
+
+    logging.info("Total rejected : %s"%(i))
+   # print data_down
     print len(machine_state_list_pl),len(machine_state_list_rta)
 
     main_redis_key = "all_devices_state"
     rta = "all_devices_state_rta"
-    redis_hook_5.set(main_redis_key,str(machine_state_list_pl))
-    redis_hook_5.set(rta,str(machine_state_list_rta))
+    down_key = "all_devices_down_state"
 
+
+
+    #redis_hook_5.set(main_redis_key,str(machine_state_list_pl))
+    #redis_hook_5.set(rta,str(machine_state_list_rta))
+    redis_hook_5.set(down_key,str(machine_state_list_down))
+    logging.info("3 keys generated in redis")
 def get_ip_host_mapping():
     path = Variable.get("hosts_mk_path")
     try:

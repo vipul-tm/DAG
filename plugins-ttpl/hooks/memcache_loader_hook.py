@@ -28,12 +28,13 @@ class MemcacheHook(BaseHook):
         self.cnx = self.get_connection(memc_cnx_id)
 
     def get_cnx(self):
-        if self.cnx.host and self.cnx.port:
-            cnx_string = str(self.cnx.host)+":"+str(self.cnx.port)
-        else:
-            cnx_string = '10.133.19.165:11211'
 
-        MEMCACHE_CONFIG = [cnx_string]
+        if self.cnx.extra and self.cnx.port:
+            cnx_string = eval(self.cnx.extra)            
+	else:
+            cnx_string = '10.133.19.165:11211'
+	
+        MEMCACHE_CONFIG = cnx_string
         #MEMCACHE_CONFIG = ['10.133.19.165:11211','10.133.12.163:11211']
         memc_cnx= memcache.Client(
                             MEMCACHE_CONFIG, debug=1,server_max_value_length = 1024*1024*10

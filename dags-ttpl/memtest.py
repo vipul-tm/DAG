@@ -31,6 +31,18 @@ def get_all_memcached_keys(host='10.133.19.165', port=11211):
 #print memc_cnx.get('sv_ospf1_slave_1_slot_1_result')
 #print len(memc_cnx.get('sv_nocout_ospf5'))
 #print len(memc_cnx.get('sv_ospf1_slave_1_slot_1_result'))
-print memc_cnx.get('sv_ospf1_slave_1_slot_1_result')
+#print memc_cnx.get('sv_ospf1_slave_1_slot_1_result')
+print "WIMAX INTRF UL /DL"
+print memc_cnx.get('%s_wimax_ul_intrf' % '10.172.206.40')
+print memc_cnx.get('%s_wimax_dl_intrf' % '10.172.206.40')
+print memc_cnx.get('%s_pmp1_sec' % '26310')
+print memc_cnx.get('%s_pmp2_sec' % '26310')
 
+print "CAMBIUM JITTER REREG"
 
+print memc_cnx.get('%s_cambium_ul_jitter' % '10.171.28.51')
+print memc_cnx.get('%s_cambium_rereg_count' % '10.171.28.51')
+
+print "uas rad5k"
+print memc_cnx.get('%s_uas_list' % '10.172.206.40')
+print memc_cnx.get('%s_rad5k_ss_ul_mod' % '10.172.206.40')

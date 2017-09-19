@@ -29,7 +29,7 @@ class MemcacheHook(BaseHook):
 
     def get_cnx(self):
         if self.cnx.host and self.cnx.port:
-            cnx_string = str(self.cnx.host)+":"+str(self.cnx.port)
+            cnx_string = self.cnx.host+":"+self.cnx.port
         else:
             cnx_string = '10.133.19.165:11211'
 

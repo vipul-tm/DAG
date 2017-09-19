@@ -107,7 +107,8 @@ def get_device_alarm_tuple(network_data,event_rules):
 def update_last_device_down(redis_hook=redis_hook_4):
 	all_devices_down_states = get_previous_device_states(redis_hook_5,"down")
 	aggregated_data_vals = list(redis_hook.get_keys("nw_agg_nocout_*"))
-	new_all_devices_down_states = {}
+
+	
 	for key in aggregated_data_vals:
 		logging.info("Gettting For %s"%(key))
 		data = redis_hook.rget(key)
@@ -127,16 +128,29 @@ def update_last_device_down(redis_hook=redis_hook_4):
 						old_refer = device_old_state.get('since')
 
 						if new_state != old_state:
-							new_all_devices_down_states[new_host] = {'state':new_state,'since':new_refer}
+							if new_state == "up" and old_state == "down":
+								all_devices_down_states[new_host] = {'state':new_state,'since':old_refer}
+							if new_state == "down" and old_state == "up":
+								all_devices_down_states[new_host] = {'state':new_state,'since':new_refer}
+							
 						else:
-							new_all_devices_down_states[new_host] = {'state':old_state,'since':old_refer}
+
+							all_devices_down_states[new_host] = {'state':old_state,'since':old_refer}
 					except Exception:
 						logging.warning("Unable to find host %s in old state for host " %new_host)
-						new_all_devices_down_states[new_host] = {'state':new_state,'since':new_refer}
-						logging.warning("Created new sate dict for %s as severity %s and since %s"%(new_host,new_state,new_refer))
+						if new_state == "up":
+							all_devices_down_states[new_host] = {'state':new_state,'since':old_refer}
+							logging.info("Created new up state dict for %s as severity %s and since %s"%(new_host,new_state,old_refer))
+						elif new_state == "down":
+							all_devices_down_states[new_host] = {'state':new_state,'since':new_refer}
+							logging.info("Created new down state dict for %s as severity %s and since %s"%(new_host,new_state,new_refer))
+						else:
+							logging.info("Other State than up or down")
 	try:
-		redis_hook_5.set("all_devices_down_state",str(new_all_devices_down_states))
-		logging.info("Successfully inserted All(%s) the values in redis"%(len(new_all_devices_down_states)))
+
+		redis_hook_5.set("all_devices_down_state",str(all_devices_down_states))
+
+		logging.info("Successfully inserted All(%s) the values in redis"%(len(all_devices_down_states)))
 	except Exception:
 		logging.error("Unable to update last device down ")
 		traceback.print_exc()
@@ -169,7 +183,7 @@ def update_device_state_values(redis_hook=redis_hook_4):
 							device_old_state = old_states.get(new_host)						
 							old_state = device_old_state.get('state')
 							old_refer = device_old_state.get('since')
-							if old_state!= new_sev and old_state != None  :
+							if old_state!= new_sev:
 								#logging.info("State has changed for %s from %s to %s"%(new_host,old_state,new_sev))
 								old_states[new_host] = {'state':new_sev,'since':new_refer}
 							else:

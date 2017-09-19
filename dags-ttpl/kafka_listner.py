@@ -68,10 +68,10 @@ insert_sv_data = KafkaExtractorOperator(
     dag=main_etl_dag,
     redis_conn='redis_hook_4',
     kafka_con_id='kafka_default',
-    topic='msg_q',
+    topic='ml_queue',
     identifier_output='redID',
     output_identifier_index='redIDInd',
     index_key='timestamp',
-    skeleton_dict={'b':'t'},
+#    skeleton_dict={'b':'t'},
     indexed=False,
     )

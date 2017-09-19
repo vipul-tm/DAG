@@ -20,8 +20,9 @@ from airflow.models import Variable
 from hooks.redis_loader_hook import RedisHook
 from hooks.memcache_loader_hook import MemcacheHook
 import inspect
-
+import MySQLdb
 import json
+import MySQLdb.cursors
 # Creating a flask admin BaseView
 OPERATORS = [MySqlLoaderOperator,TelradExtractor,Nagiosxtractor,EvaluateTransformer,List2DictTransformer,ApiExtractor]
 HOOKS = [RedisHook,MemcacheHook]
@@ -78,11 +79,57 @@ class intro(BaseView):
         return self.render("tac_plugin/intro.html",attributes=attributes,data_table=data_table)
 
 
+class coverage_analytics(BaseView):
+    """docstring for coverage_analytics"""
+
+    def get_data_to_be_processed(self,sql):
+        db = MySQLdb.connect(host="10.133.12.163",    
+                     user="root",        
+                     passwd="root",  
+                     db="nocout_24_09_14",
+                     port = 3200)       
+
+        # you must create a Cursor object. It will let
+        #  you execute all the queries you need
+        #cur = db.cursor()
+        cursor_dict = db.cursor(MySQLdb.cursors.DictCursor) 
+
+
+        # Use all the SQL you like
+       
+        #cur.execute("select * from inventory_basestations")
+        cursor_dict.execute(sql)
+        # print all the first cell of all the rows
+        #for row in cur.fetchall():
+        #   print row
+
+        all_data = []
+        for x in cursor_dict.fetchall():
+            all_data.append(x.copy())
+
+        db.close()
+        return all_data
+
+    @expose('/')
+    def test(self):
+        attributes = []
+        processed_data = self.get_data_to_be_processed("select * from inventory_coverageanalyticsprocessedinfo;")
+        inp_data_ss =  self.get_data_to_be_processed("select * from inventory_coverageanalyticssubstation;")
+        inp_data_bs = self.get_data_to_be_processed("select * from inventory_coverageanalyticsbasestation;")
+        return self.render("tac_plugin/coverage.html",attributes=attributes,processed_data=processed_data,input_ss = inp_data_ss , input_bs = inp_data_bs)
+
+
+    
+
+
+
+
+
 
 
 v = TacView(category="TAC Plugin", name="Operators")
 introView = intro(category="TAC Plugin", name="Intro")
-
+coverage = coverage_analytics(category="CA", name="Coverage_analytics")
 # Creating a flask blueprint to intergrate the templates and static folder
 bp = Blueprint(
     "tac_plugin", __name__,
@@ -91,7 +138,7 @@ bp = Blueprint(
     static_url_path='/static/tac')
 
 
-VIEWS = [v,introView]
+VIEWS = [v,introView,coverage]
 BLUEPRINT = [bp]
 
 # Defining the plugin class

@@ -41,6 +41,8 @@ default_args = {
 }
 
 ##############################DAG CONFIG ENDS###############################################33333################################
+aggregate_nw_tasks={}
+aggregate_sv_tasks={}
 logging.basicConfig(level=logging.ERROR)
 redis_hook_4 = RedisHook(redis_conn_id="redis_hook_4")
 rules = eval(Variable.get('rules'))
@@ -106,13 +108,14 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 			if threshold_value != '' and current_value != '':
 				#logging.info("\n Evaluating ")
 				
-				#logging.info("Evaluating the Formula ---> "+str(current_value)+str(symbol)+str(threshold_value) + str(service_name))
+				#logging.info("Evaluating the Formula ---> %s%s%s of %s as %s"%(str(current_value),str(symbol),str(threshold_value) , str(service_name) ,eval("%s%s%s"%(float(current_value),str(symbol),float(threshold_value)))))
 				try:
-					if eval(float(current_value)+symbol+float(threshold_value)):
+					if eval("%s%s%s"%(float(current_value),str(symbol),float(threshold_value))):
 						result_all.append('True')
 					else:
 						result_all.append('False')
 				except (NameError, SyntaxError, TypeError, ValueError):
+					
 					if eval('\''+str(current_value)+'\''+symbol+'\''+str(threshold_value)+'\''):
 						result_all.append('True')
 					else:
@@ -186,40 +189,55 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 		else:
 			return "up"
 
-		return 'ok'
+		if (ds == "pl" or ds == "rta"):
+			return 'up'
+		else:
+			return "ok"
 		#only required for UP and Down servereties of network devices
-	def calculate_refer(hostname,current_sev,ds,all_down_devices_states):
+
+	def calculate_refer(hostname,current_sev,ds,all_down_devices_states,processing_time):
+		
 		if current_sev == "down" or current_sev == "up":
 			try:
 				if all_down_devices_states.get(hostname).get('state') == None:
+					logging.info("Got None")
 					return 0
-				if all_down_devices_states.get(hostname).get('state') != current_sev:
-					old_sev = all_down_devices_states.get(hostname).get('state')
+				if all_down_devices_states.get(hostname).get('state') != current_sev: # to see if severity has chnaged
+					old_sev = all_down_devices_states.get(hostname).get('state') 
 					if current_sev == "down" and old_sev == "up":
-						return backtrack_x_min(int(time.time()),300) #backtrack 5 min slot to give last down time
+						return processing_time #backtrack 5	 min slot to give last down time
 					elif current_sev == "up" and old_sev == "down":
-						return forward_five_min(int(time.time())) #Formawrd 5 min slot
+						#return backtrack_x_min(processing_time,300)
+						return all_down_devices_states.get(hostname).get('since')
+						#return forward_five_min(int(time.time())) #Formawrd 5 min slot
 				elif all_down_devices_states.get(hostname).get('state') == current_sev:
 					#TODO : See this please something is wrong
-					if all_down_devices_states.get(hostname).get('since') != None:
+					
+					if all_down_devices_states.get(hostname).get('since') != 'None':
 						since_time =  all_down_devices_states.get(hostname).get('since')
+						#logging.info("Since %s %s"%(since_time,hostname))
 						return since_time
 
 			except AttributeError:
+				
 				logging.info("Problem in fetching the refer value .Not able to find the host %s "%hostname)
+				
 				#traceback.print_exc()
 				
 			except Exception:
-				logging.info("Error while updating refer")
+				logging.info("Error while calculating refer")
+				
+				
 		else:
 			try:
-				#logging.info("HOST : %s"%(len(all_down_devices_states),hostname))
-				if all_down_devices_states.get(hostname) != None:
+				#logging.info("HOST : %s %s"%(len(all_down_devices_states),hostname))
+				if all_down_devices_states.get(hostname):
 					since_time =  all_down_devices_states.get(hostname).get('since')
+					#logging.info("Returning  %s "%(since_time))
 					return since_time
 			except Exception:
 				logging.info("Device %s not found in the dict for ds : %s"%(hostname,ds))
-				return int(time.time())
+				
 				
 
 	"""
@@ -233,23 +251,26 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 			previous_device_state = all_devices_states_rta
 		else:
 			logging.info("Datasource is neither rta nor pl")
+			return 0
 
 		try:
 			device_state = previous_device_state.get(hostname)
 			if device_state.get("state") == current_severity:
 				age = device_state.get("since")
+				return age
 
 				if age != None and age != '':
 					if age == 'None':
 						return current_time
 					else:
-						return device_state.get("since")
+						return age
 				else:
 					logging.info("Got the devices %s but unable to fetch the since key "%(hostname))
-					return 'unknown'
+					return 0
 
 			elif device_state.get("state") != current_severity:
 				return current_time
+				
 
 		except Exception:
 			logging.info("Unable to get state for device %s will be created when updating refer"%(hostname))
@@ -344,13 +365,14 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 				if network_dict['ip_address'] in device_to_be_converted_down:
 					network_dict['severity'] ="down"
 				else:
+					#logging.info("IP: %s"%(slot[1]))	
 					network_dict['severity'] =calculate_severity(key,value,host_state,data_source)
 					
 				network_dict['ds'] = data_source
 				network_dict['cur'] = value
 				network_dict['war'] = threshold_values[data_source].get('war') if threshold_values[data_source].get('war') else ''
 				network_dict['cric'] = threshold_values[data_source].get('cric') if threshold_values[data_source].get('cric') else ''
-				network_dict['refer'] = str(calculate_refer(slot[0],network_dict['severity'],data_source,all_down_devices_states)) #TODO: Here the same refer is beig calculate for pl and rta which will although be one only
+				network_dict['refer'] = str(calculate_refer(slot[0],network_dict['severity'],data_source,all_down_devices_states,network_dict['local_timestamp'])) #TODO: Here the same refer is beig calculate for pl and rta which will although be one only
 				network_dict['age'] = calculate_age(slot[0],network_dict['severity'],data_source,network_dict['local_timestamp'])
 
 				network_list.append(network_dict.copy())
@@ -421,7 +443,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 								refer = memc_con.get(key1)
 							except Exception:
 								logging.info("Unable to find wimax sector data from MEMC")
-								continue
+								
 							
 					
 	#####################################################################################################################################
@@ -450,7 +472,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 					if str(data_dict['service']) in rad5k_helper_service:
 						
 						if str(data_dict['service']) == 'rad5k_ss_ul_modulation':
-								key = ip_address+ "_rad5k_ss_ul_mod"
+							
 								key = str(key)
 								memcachelist(key,value,memc_con)
 						elif str(data_dict['service']) == 'rad5k_ss_dl_uas':
@@ -461,6 +483,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 					if str(data_dict['service']) in kpi_helper_services:
 						key = ip_address+ "_"+str(data_dict['service'])
 						key = str(key)
+						logging.info("Setting %s"%(key))
 						memcachelist(key,data_dict['severity'],memc_con)
 
 					if device_data[2] in provis_services:
@@ -475,8 +498,6 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 				logging.info("Time for FOR LOOP  = "+ str(time.time() - start_time))
 			else:
 				logging.info("No Data for input")
-
-
 
 		except IndexError,e:
 			logging.info("Some Problem with the dataset ---> \n"+str(device_data))	
@@ -633,8 +654,6 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 
 	
 #########################################################################TASKS#######################################################################
- 	aggregate_nw_tasks={}
-	aggregate_sv_tasks={}
 	aggregate_nw_smptt_tasks = {}
 	event_site_tasks = {}
 	service_format_sensor_dict = {}
@@ -760,6 +779,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 
 					try:
 						nw_extract_task_sensor >> network_tasks
+						
 						network_tasks >> event_site_tasks.get(site_name)
 						network_tasks >> aggregate_nw_tasks.get(machine_name)
 					except Exception:
