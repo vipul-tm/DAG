@@ -60,7 +60,7 @@ cam_services = eval(Variable.get('cambium_services'))
 
 for machine in system_config:
     machine_name=machine.get('Name')
-    if machine_name == 'ospf2':
+    if machine_name == 'ospf2' or machine_name == 'ospf1':
     	network_sensor = ExternalTaskSensor(
     	external_dag_id="ETL.FORMAT",
     	external_task_id="aggregate_%s_nw_data"%machine_name,
@@ -71,7 +71,6 @@ for machine in system_config:
     	dag=ml_prediction_dag,
     	queue=Q_PUBLIC,
     	)
-	"""
     	service_sensor = ExternalTaskSensor(
     	external_dag_id="ETL.FORMAT",
     	external_task_id="aggregate_%s_sv_data"%machine_name,
@@ -82,7 +81,6 @@ for machine in system_config:
     	dag=ml_prediction_dag,
     	queue=Q_PUBLIC,
     	)
-    	"""
     	obj = ml_tf_implementer(network_key='nw_agg_nocout_%s' % machine_name 
     		    	    ,service_key ='sv_agg_nocout_%s' % machine_name
     		    	    ,services=services,cam_services=cam_services)
@@ -102,7 +100,7 @@ for machine in system_config:
     	queue=Q_PUBLIC)
     	
     	network_sensor >> pl_prediction_data_extraction
-    	#service_sensor >> pl_prediction_data_extraction
+    	service_sensor >> pl_prediction_data_extraction
 
     	pl_prediction_data_extraction >> pl_prediction_data_format_and_store
     	

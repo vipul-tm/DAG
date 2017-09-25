@@ -60,9 +60,6 @@ UPDATE_TAIL = """
  values
   (%(machine_name)s,%(current_value)s,%(service_name)s,%(avg_value)s,%(max_value)s,%(age)s,%(min_value)s,%(site_name)s,%(data_source)s,%(critical_threshold)s,%(device_name)s,%(severity)s,%(sys_timestamp)s,%(ip_address)s,%(warning_threshold)s,%(check_timestamp)s,%(refer)s) 
   ON DUPLICATE KEY UPDATE machine_name = VALUES(machine_name),current_value = VALUES(current_value),age=VALUES(age),site_name=VALUES(site_name),critical_threshold=VALUES(critical_threshold),severity=VALUES(severity),sys_timestamp=VALUES(sys_timestamp),ip_address=VALUES(ip_address),warning_threshold=VALUES(warning_threshold),check_timestamp=VALUES(check_timestamp),refer=VALUES(refer)
-
-
-
 """
 ERROR_DICT ={404:'Device not found yet',405:'No SS Connected to BS-BS is not skipped'}
 ERROR_FOR_DEVICE_OMITTED = [404]
@@ -82,7 +79,6 @@ child_dag_name,
   bs_name,
   ss_name,
   config_sites): #here config site is list of all sites in system_config var
-	
 	
 	try:
 		
@@ -112,9 +108,9 @@ child_dag_name,
 		site_name = kwargs.get("params").get("site_name")
 		machine_name = site_name.split("_")[0]
 		device_type = kwargs.get("params").get("technology")
-		print "calculated_bs_ul_issue_%s_%s"%(machine_name,device_type)
+		
 		bs_data = redis_hook_6.rget("calculated_bs_ul_issue_%s_%s"%(device_type,site_name))
-		print bs_data
+		
 		bs_kpi_dict = {
 				'site_name': 'unknown' ,
 				'device_name': 'unknown',
@@ -143,7 +139,7 @@ child_dag_name,
 			bs_device= eval(bs_device)
 			hostname = bs_device.get('hostname')
 			machine = bs_device.get('site').split("_")[0]
-
+			
 			bs_kpi_dict['machine_name']= machine
 			bs_kpi_dict['check_timestamp']=cur_processing_time
 			bs_kpi_dict['sys_timestamp']=cur_processing_time
@@ -163,17 +159,18 @@ child_dag_name,
 				
 				for data_source in bs_device.get(service):
 					#data_source = 'ul_issue'
-					bs_kpi_dict['data_source']=data_source+"_ul_issue" if device_type == "StarmaxIDU" else 'ul_issue'
-					bs_kpi_dict['current_value']= bs_device.get(service).get(data_source)
+					bs_kpi_dict['data_source']=data_source+"_ul_issue" if device_type == "StarmaxIDU" else 'bs_ul_issue'
+					bs_kpi_dict['current_value']= 0 if bs_device.get(service).get(data_source) == 405 else bs_device.get(service).get(data_source)
 					bs_kpi_dict['refer']=bs_device.get(data_source+'_sec')
 					bs_kpi_dict['severity']= calculate_severity(service,bs_kpi_dict['current_value'])
 					bs_kpi_dict['age']= calculate_age(hostname,bs_kpi_dict['severity'],bs_device.get('device_type'),cur_processing_time)
+					
 					if bs_kpi_dict['current_value'] not in ERROR_DICT.keys():
 						bs_devices_list.append(bs_kpi_dict.copy())	
 				 	
 				
-		pprint (bs_devices_list)
-		try:
+		
+		try:			
 			redis_hook_6.rpush("formatted_bs_%s_%s"%(device_type,machine_name),bs_devices_list)
 		except Exception:
 			logging.error("Unable to push Formatted BS Data")		 
@@ -234,7 +231,7 @@ child_dag_name,
 				ss_devices_list.append(ss_kpi_dict.copy())
 
 		try:
-			print len(ss_devices_list)
+			
 			if len(ss_devices_list) > 0:
 				redis_hook_6.rpush("formatted_ss_%s_%s"%(device_type,machine_name),ss_devices_list)
 			else:
@@ -248,9 +245,17 @@ child_dag_name,
 		device_type = kwargs.get("params").get("technology")
 		ss_data_dict = {}
 		all_ss_data = []
-		print "+++++++++++++++++++++++++"
-		print len(hostnames_ss_per_site.get(site_name))
-		print "+++++++++++++++++++++++++"
+		# print "+++++++++++++++++++++++++"
+		# try:
+			
+		# 	print len(hostnames_ss_per_site.get(site_name))
+		# except Exception:
+		# 	logging.info("No data found for %s"%(site_name))
+		# print "+++++++++++++++++++++++++"
+		if site_name not in hostnames_ss_per_site.keys():
+			logging.warning("No SS devices found for %s"%(site_name))
+			return 1
+
 		for hostnames_dict in hostnames_ss_per_site.get(site_name):
 			host_name = hostnames_dict.get("hostname")
 			ip_address = hostnames_dict.get("ip_address")
@@ -263,7 +268,13 @@ child_dag_name,
 			
 			all_ss_data.append(ss_data_dict.copy())
 
-		redis_hook_6.rpush("%s_%s"%(device_type,site_name),all_ss_data)
+		if len(all_ss_data) == 0:
+			logging.info("No data Fetched ! Aborting Successfully")
+			return 0
+		try:
+			redis_hook_6.rpush("%s_%s"%(device_type,site_name),all_ss_data)
+		except Exception:
+			logging.warning("Unable to insert ss data into redis")
 		
 
 		#pprint(all_ss_data)
@@ -273,20 +284,28 @@ child_dag_name,
 		device_type = kwargs.get("params").get("technology")
 		bs_data_dict = {}
 		all_bs_data = []
-		for hostnames_dict in hostnames_per_site.get(site_name):
-			host_name = hostnames_dict.get("hostname")
-			ip_address = hostnames_dict.get("ip_address")
-			connected_ss =  memc_con.get("%s_conn_ss"%(host_name))
-			bs_data_dict['hostname'] = host_name
-			bs_data_dict['ipaddress'] = ip_address
-			bs_data_dict['connectedss'] = connected_ss
-			bs_data_dict['device_type'] = device_type
 
-			for service in ul_issue_service_mapping.get(bs_name):
-				bs_data_dict[service] = memc_con.get("%s_%s"%(host_name,service))	
+		try:
+			for hostnames_dict in hostnames_per_site.get(site_name):
+				print hostnames_dict
+				host_name = hostnames_dict.get("hostname")
+				ip_address = hostnames_dict.get("ip_address")
+				connected_ss =  memc_con.get("%s_conn_ss"%(host_name))
+				bs_data_dict['hostname'] = host_name
+				bs_data_dict['ipaddress'] = ip_address
+				bs_data_dict['connectedss'] = connected_ss
+				bs_data_dict['device_type'] = device_type
 
-			all_bs_data.append(bs_data_dict.copy())
-		redis_hook_6.rpush("%s_%s"%(device_type,site_name),all_bs_data)
+				for service in ul_issue_service_mapping.get(bs_name):
+					bs_data_dict[service] = memc_con.get("%s_%s"%(host_name,service))	
+
+				all_bs_data.append(bs_data_dict.copy())
+		except TypeError:
+			logging.info("Unable to get site in the hostnames_per_site  variable")
+		if len(all_bs_data) > 0 :
+			redis_hook_6.rpush("%s_%s"%(device_type,site_name),all_bs_data)
+		else:
+			logging.info("No Host Found at site")
 		
 				
 	def calculate_ul_issue_data_bs(**kwargs):
@@ -333,8 +352,14 @@ child_dag_name,
 			# else:
 			# 	print "%s-%s"%(dev.get('wimax_bs_ul_issue_kpi').get('pmp1'),dev.get('wimax_bs_ul_issue_kpi').get('pmp2'))
 		
-		
-		redis_hook_6.rpush("calculated_bs_ul_issue_%s_%s"%(device_type,site_name),all_bs_calculated_data)
+		if len(all_bs_calculated_data) > 0:
+			try:
+				redis_hook_6.rpush("calculated_bs_ul_issue_%s_%s"%(device_type,site_name),all_bs_calculated_data)
+			except Exception:
+				logging.error("Unable to insert data in redis")
+		else:
+			logging.info("No Data found for site %s"%(site_name))
+
 		#here we will only calculate the ul_issue for the bs which is dependent on the SS
 
 
@@ -346,6 +371,10 @@ child_dag_name,
 		device_type = kwargs.get("params").get("technology")
 
 		devices_data_dict = redis_hook_6.rget("%s_%s"%(device_type,site_name))
+		if len(devices_data_dict) == 0:
+			logging.info("No Data found for ss %s "%(site_name))
+			return 1
+
 		services = device_to_service_mapper.get(device_type)
 		ip_ul_mapper = {}
 		ss_ul_issue_list= []
@@ -418,15 +447,18 @@ child_dag_name,
 				provide_context=True,
 				python_callable=aggregate_ul_issue_data,
 				params={"machine_name":each_machine_name,'type':'ss'},
-				dag=ul_issue_kpi_subdag_dag
+				dag=ul_issue_kpi_subdag_dag,
+				queue = celery_queue
 				)
 			aggregate_ul_issue_data_bs_task = PythonOperator(
 				task_id = "aggregate_ul_issue_bs_%s"%each_machine_name,
 				provide_context=True,
 				python_callable=aggregate_ul_issue_data,
 				params={"machine_name":each_machine_name,'type':'bs'},
-				dag=ul_issue_kpi_subdag_dag
-				)	
+				dag=ul_issue_kpi_subdag_dag,
+				queue = celery_queue
+				)
+			
 			aggregate_dependency_ss[each_machine_name] = aggregate_ul_issue_data_ss_task
 			aggregate_dependency_bs[each_machine_name] = aggregate_ul_issue_data_bs_task
 			device_tech = {'ss':ss_name,'bs':bs_name}
@@ -439,6 +471,7 @@ child_dag_name,
 			UPDATE_QUERY = UPDATE_QUERY.replace('\n','')
 
 			for bs_or_ss in device_tech.keys():
+					
 				insert_data_in_mysql = MySqlLoaderOperator(
 					task_id ="upload_%s_data_%s"%(bs_or_ss,each_machine_name),
 					dag=ul_issue_kpi_subdag_dag,
@@ -446,16 +479,20 @@ child_dag_name,
 					#data="",
 					redis_key="aggregated_ul_issue_%s_%s_%s"%(each_machine_name,bs_or_ss,device_tech.get(bs_or_ss)),
 					redis_conn_id = "redis_hook_6",
-					mysql_conn_id='mysql_uat'
+					mysql_conn_id='mysql_uat',
+					queue = celery_queue,
+					trigger_rule = 'all_done'
 					)
 				update_data_in_mysql = MySqlLoaderOperator(
 					task_id ="update_%s_data_%s"%(bs_or_ss,each_machine_name),
-					query=UPDATE_QUERY,
+					query=UPDATE_QUERY	,
 					#data="",
 					redis_key="aggregated_ul_issue_%s_%s_%s"%(each_machine_name,bs_or_ss,device_tech.get(bs_or_ss)),
 					redis_conn_id = "redis_hook_6",
 					mysql_conn_id='mysql_uat',
 					dag=ul_issue_kpi_subdag_dag,
+					queue = celery_queue,
+					trigger_rule = 'all_done'
 					)
 				if bs_or_ss == "ss":
 					update_data_in_mysql << aggregate_ul_issue_data_ss_task
@@ -470,45 +507,63 @@ child_dag_name,
 			get_required_data_ss_task = PythonOperator(
 				task_id = "get_ul_issue_data_of_ss_%s"%each_site_name,
 				provide_context=True,
+				trigger_rule = 'all_done',
 				python_callable=get_required_data_ss,
 				params={"site_name":each_site_name,"technology":ss_name},
-				dag=ul_issue_kpi_subdag_dag
+				dag=ul_issue_kpi_subdag_dag,
+				queue = celery_queue
 				)
 			get_required_data_bs_task = PythonOperator(
 				task_id = "get_ul_issue_data_of_bs_%s"%each_site_name,
 				provide_context=True,
+				trigger_rule = 'all_done',
 				python_callable=get_required_data_bs,
 				params={"site_name":each_site_name,"technology":bs_name},
-				dag=ul_issue_kpi_subdag_dag
+				dag=ul_issue_kpi_subdag_dag,
+				queue = celery_queue,
+				
 				)
 			calculate_utilization_data_ss_task = PythonOperator(
 				task_id = "calculate_ss_ul_issue_kpi_of_%s"%each_site_name,
 				provide_context=True,
+				trigger_rule = 'all_done',
 				python_callable=calculate_ul_issue_data_ss,
 				params={"site_name":each_site_name,"technology":ss_name},
-				dag=ul_issue_kpi_subdag_dag
+				dag=ul_issue_kpi_subdag_dag,
+				queue = celery_queue,
+				
 				)
 			calculate_utilization_data_bs_task = PythonOperator(
 				task_id = "calculate_bs_ul_issue_kpi_of_%s"%each_site_name,
 				provide_context=True,
 				python_callable=calculate_ul_issue_data_bs,
+				trigger_rule = 'all_done',
 				params={"site_name":each_site_name,"technology":bs_name,"lost_n_found":False},
-				dag=ul_issue_kpi_subdag_dag
+				dag=ul_issue_kpi_subdag_dag,
+				queue = celery_queue,
+				
 				)
 			format_data_ss_task = PythonOperator(
 				task_id = "format_data_of_ss_%s"%each_site_name,
 				provide_context=True,
 				python_callable=format_ss_data,
+				trigger_rule = 'all_done',
 				params={"site_name":each_site_name,"technology":ss_name},
-				dag=ul_issue_kpi_subdag_dag
+				dag=ul_issue_kpi_subdag_dag,
+				queue = celery_queue,
+				
 				)
 			format_data_bs_task = PythonOperator(
 				task_id = "format_data_of_bs_%s"%each_site_name,
 				provide_context=True,
 				python_callable=format_bs_data,
+				trigger_rule = 'all_done',
 				params={"site_name":each_site_name,"technology":bs_name},
-				dag=ul_issue_kpi_subdag_dag
+				dag=ul_issue_kpi_subdag_dag,
+				queue = celery_queue,
+				
 				)
+			
 
 			get_required_data_ss_task >> calculate_utilization_data_ss_task
 			calculate_utilization_data_ss_task >> format_data_ss_task

@@ -48,39 +48,40 @@ cam_services = eval(Variable.get('cambium_services'))
 
 for machine in system_config:
     machine_name=machine.get('Name')
-    pl_prediction_data_sensor = ExternalTaskSensor(
-    external_dag_id="PL_PREDICTION",
-    external_task_id="pl_prediction_data_format_and_store_%s" % machine_name,
-    task_id="sense_%s_pl_prediction_data" % machine_name,
-    poke_interval=2,
-    trigger_rule = 'all_done',
-    #sla=timedelta(minutes=1),
-    dag=pl_testing_dag,
-    queue=Q_PUBLIC,
-    )
+    if machine_name == 'ospf1' or machine_name == 'ospf2':
+    	pl_prediction_data_sensor = ExternalTaskSensor(
+    	external_dag_id="PL_PREDICTION",
+    	external_task_id="pl_prediction_data_format_and_store_%s" % machine_name,
+    	task_id="sense_%s_pl_prediction_data" % machine_name,
+    	poke_interval=2,
+    	trigger_rule = 'all_done',
+    	#sla=timedelta(minutes=1),
+    	dag=pl_testing_dag,
+    	queue=Q_PUBLIC,
+    	)
 
-    obj = ml_tf_implementer(network_key='nw_agg_nocout_%s' % machine_name 
-    		    	,service_key ='sv_agg_nocout_%s' % machine_name
-    		    	,services=services,cam_services=cam_services)
+    	obj = ml_tf_implementer(network_key='nw_agg_nocout_%s' % machine_name 
+    		    	    ,service_key ='sv_agg_nocout_%s' % machine_name
+    		    	    ,services=services,cam_services=cam_services)
 
-    pl_test = PythonOperator(
-    task_id="pl_test_%s" % machine_name,
-    provide_context=True,
-    python_callable=obj.test,
-    dag=pl_testing_dag,
-    params={'dag_obj': pl_testing_dag},
-    queue=Q_PUBLIC)
-    """ 
-    if machine_name == 'ospf2':
-    	print "#####"
-        pl_cam_test = PythonOperator(
-             task_id="cam_pl_test_%s" % machine_name,
-             provide_context=True,
-             python_callable=obj.cambium_test_data,
-             dag=pl_testing_dag,
-             params={'dag_obj': pl_testing_dag},
-             queue=Q_PUBLIC)
-        pl_prediction_data_sensor >> pl_cam_test
-    """
-    pl_prediction_data_sensor >> pl_test
-    
+    	pl_test = PythonOperator(
+    	task_id="pl_test_%s" % machine_name,
+    	provide_context=True,
+    	python_callable=obj.test,
+    	dag=pl_testing_dag,
+    	params={'dag_obj': pl_testing_dag},
+    	queue=Q_PUBLIC)
+    	""" 
+    	if machine_name == 'ospf2':
+    	    print "#####"
+            pl_cam_test = PythonOperator(
+             	 task_id="cam_pl_test_%s" % machine_name,
+             	 provide_context=True,
+             	 python_callable=obj.cambium_test_data,
+             	 dag=pl_testing_dag,
+             	 params={'dag_obj': pl_testing_dag},
+             	 queue=Q_PUBLIC)
+            pl_prediction_data_sensor >> pl_cam_test
+    	"""
+    	pl_prediction_data_sensor >> pl_test
+    	

@@ -4,7 +4,7 @@ from airflow.operators import DummyOperator
 from datetime import datetime, timedelta    
 from airflow.models import Variable
 from airflow.operators.subdag_operator import SubDagOperator
-from subdags.ul_issue_kpi_subdag import process_ul_issue_kpi
+from subdags.provision_kpi_subdag import process_provision_kpi
 from collections import defaultdict
 from airflow.hooks import RedisHook
 #from etl_tasks_functions import get_required_static_data
@@ -42,18 +42,18 @@ Q_PRIVATE = "formatting_queue"
 Q_OSPF = "poller_queue"
 Q_PING = "poller_queue"
 
-PARENT_DAG_NAME = "UL_ISSUE_KPI"
-ul_issue_dag=DAG(dag_id=PARENT_DAG_NAME, default_args=default_args, schedule_interval='*/5 * * * *')
-redis_hook_6 = RedisHook(redis_conn_id="redis_hook_6")
+PARENT_DAG_NAME = "PROVISION_KPI"
+provision_kpi_dag=DAG(dag_id=PARENT_DAG_NAME, default_args=default_args, schedule_interval='*/5 * * * *')
+redis_hook_7 = RedisHook(redis_conn_id="redis_hook_7")
 redis_hook_2 = RedisHook(redis_conn_id="redis_hook_2")
-technologies = eval(Variable.get('ul_issue_kpi_technologies'))
+technologies = eval(Variable.get('provision_kpi_technologies'))
 machines = eval(Variable.get("system_config"))
 devices = eval(Variable.get('hostmk.dict.site_mapping'))
 all_sites=[]
 def init_kpi():
     logging.info("TODO : Check All vars and Airflow ETL Environment here")
-    redis_hook_6.flushall("*")
-    logging.info("Flushed all in redis_hook_6 connection")
+    redis_hook_7.flushall("*")
+    logging.info("Flushed all in redis_hook_7 connection")
 
 def get_previous_device_states(device_type):
     prev_state = eval(redis_hook_2.get("kpi_ul_prev_state_%s"%device_type))
@@ -64,12 +64,11 @@ def update_age(**kwargs):
 
         device_type = kwargs.get('params').get('device_type')
         bs_or_ss = kwargs.get('params').get('type')
-        old_states = get_previous_device_states(device_type) #get PL here           
-
-        aggregated_data_vals = list(redis_hook_6.get_keys("aggregated_ul_issue_*_%s_%s"%(bs_or_ss,device_type)))
+        old_states = get_previous_device_states(device_type) #get prev states from redis  
+        aggregated_data_vals = list(redis_hook_7.get_keys("aggregated_provision_*_%s"%(device_type)))
 
         for key in aggregated_data_vals:
-            data = eval(redis_hook_6.get(key))
+            data = eval(redis_hook_7.get(key))
             for device in data:
                
                 #device = eval(device)
@@ -97,7 +96,7 @@ def update_age(**kwargs):
         try:                
             
             if old_states != None and len(old_states) > 0:
-                redis_hook_2.set("kpi_ul_prev_state_",str(device_type))
+                redis_hook_2.set("kpi_provis_prev_state_",str(device_type))
                 logging.error("Succeessfully Updated Age")          
             else:
                 logging.info("recieved fucking None") 
@@ -116,7 +115,7 @@ initiate_dag = PythonOperator(
                 task_id = "Initiate",
                 provide_context=False,
                 python_callable=init_kpi,
-                dag=ul_issue_dag,
+                dag=provision_kpi_dag,
                 queue = Q_PUBLIC
                 )
 
@@ -128,45 +127,29 @@ for machine in machines:
                 #site = eval(site)
                 #print site.get('name')
 
-for technology in technologies:
-    CHILD_DAG_NAME = "%s"%(technology)
+for technology in technologies: #bs:ss mapping in a dict
+    CHILD_DAG_NAME = "%s"%(technologies.get(technology))
     #logging.info("For Tech %s"%(technology))
-    ul_subdag_task=SubDagOperator(subdag=process_ul_issue_kpi(PARENT_DAG_NAME, CHILD_DAG_NAME, datetime(2017, 2, 24),ul_issue_dag.schedule_interval,Q_PUBLIC,
-        devices.get(technology).keys(),
-        devices.get(technologies.get(technology)).keys(),
-        devices.get(technology),
-        devices.get(technologies.get(technology)),
-        technology,
+    provis_subdag_task=SubDagOperator(subdag=process_provision_kpi(PARENT_DAG_NAME, CHILD_DAG_NAME, datetime(2017, 2, 24),provision_kpi_dag.schedule_interval,Q_PUBLIC,
+        devices.get(technologies.get(technology)).keys(), ## SS Sites with that tech
+        devices.get(technologies.get(technology)), #all site device data,
         technologies.get(technology),
         all_sites),
     task_id=CHILD_DAG_NAME,
-    dag=ul_issue_dag,
+    dag=provision_kpi_dag,
     queue=Q_PUBLIC
     )
-    update_age_bs_task = PythonOperator(
-                task_id = "update_bs_age_%s"%(technology),
-                provide_context=True,
-                python_callable=update_age,
-                params={'type':'bs','device_type':technology},
-                dag=ul_issue_dag,
-                queue = Q_PUBLIC
-                )
+
     update_age_ss_task = PythonOperator(
                 task_id = "update_ss_age_%s"%technologies.get(technology),
                 provide_context=True,
                 python_callable=update_age,
                 params={'type':'ss','device_type':technologies.get(technology)},
-                dag=ul_issue_dag,
+                dag=provision_kpi_dag,
                 queue = Q_PUBLIC
                 )   
 
-    initiate_dag >> ul_subdag_task 
-    ul_subdag_task >> update_age_bs_task
-    ul_subdag_task >> update_age_ss_task
-    # aggregate_utilization_data = DummyOperator(
-    #         task_id = "aggregate_ul_issue_kpi_of_%s"%technology,
-    #         #provide_context=True,
-    #         #python_callable=aggregate_utilization_data,
-    #         #params={"machine_name":each_machine_name},
-    #         dag=ul_issue_dag
-    #         )   
+    initiate_dag >> provis_subdag_task 
+ 
+    provis_subdag_task >> update_age_ss_task
+ 

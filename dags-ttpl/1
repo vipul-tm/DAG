@@ -384,64 +384,56 @@ class ml_tf_implementer(ml_classifier):
 		live_data_list = eval(live_data_list)
 	    except Exception,e:
 	        logging.error('Error in getting eval data from redis %s %s' % (e,machine))
-	        return
-	    non_dupli = []
+	        return 
 	    for live_entry in live_data_list:
                 network_dict = {}
                 try:
-                    logging.error('Live data %s' % type(live_entry))
-		    ip_address = live_entry[-2]
-		    host = live_entry[-1]
-                    live_entry = np.array(live_entry[:-2],dtype=np.float64)
-                    logging.error('final entries %s %s' % (live_entry,svr))
-	            prediction = svr.predict(live_entry)
+                    logging.error('Live data %s' % live_entry)
+                    live_entry = np.array(live_entry)
+                    logging.error('final entries %s' % live_entry[:-2])
+	            prediction = svr.predict(live_entry[:-2])
                     logging.error('Prediction %s' % str(prediction))
 	            prediction = int(prediction[0])
 	        except Exception,e:
 	            logging.error("Error in prediction %s " % str(e))
 	            continue
-	        if ip_address in  non_dupli:
-	            continue
-	        non_dupli.append(ip_address)
 	        if prediction != '' and prediction != None:
 	            if prediction < 0 :
 	                prediction =  0
-	            elif prediction > 100:
-	            	prediction = 100
 	            if prediction <= 10:
 	                severity = 'ok'
 	            elif prediction > 10 and prediction < 50:
 	                severity = 'warning'
 	            else:
 	                severity = 'critical'
-	            
 	        network_dict['severity'] = severity
                 network_dict['site'] = "".join([machine,"_slave_1"])
-                network_dict['host'] = host
+                network_dict['host'] = live_entry[-1]
                 network_dict['service'] = 'ping'
-                network_dict['ip_address'] = ip_address
+                network_dict['ip_address'] = live_entry[-2]
                 network_dict['age'] = ''
                 network_dict['ds'] = 'pl'
                 network_dict['cur'] = prediction
                 network_dict['war'] = 10
                 network_dict['cric'] = 50
-                network_dict['check_time'] = int(time.time()) - 300
-                network_dict['local_timestamp'] = int(time.time()) - 300 
+                network_dict['check_time'] = int(time.time())
+                network_dict['local_timestamp'] = int(time.time())
                 network_dict['refer'] = ''
                 network_dict['min_value'] = 0
                 network_dict['max_value'] = 100
                 network_dict['avg_value'] = 50
                 network_dict['machine_name'] = machine
                 mysql_data.append(network_dict.copy())
-    	    query_nw = "INSERT INTO performance_performancenetwork_predicted "
-    	    query_nw +="(machine_name,current_value,service_name,avg_value,max_value,age,min_value,site_name,data_source,\
+    		query_nw = "INSERT INTO performance_performancenetwork_predicted "
+    		query_nw +="(machine_name,current_value,service_name,avg_value,max_value,age,min_value,site_name,data_source,\
     		critical_threshold,device_name,severity,sys_timestamp,ip_address,warning_threshold,check_timestamp,refer) values \
     		(%(machine_name)s,%(cur)s,%(service)s,%(avg_value)s,%(max_value)s,%(age)s,%(min_value)s,%(site)s,%(ds)s,%(cric)s,\
     		%(host)s,%(severity)s,%(local_timestamp)s,%(ip_address)s,%(war)s,%(check_time)s,%(refer)s)"  
 	        
-	    mysql_conn_id='mysql_%s' % machine
+		mysql_conn_id='mysql_%s' % machine
+		print "----------"
 		
-	    mysql_pl_predicted_data = MySqlLoaderOperator(
+		mysql_pl_predicted_data = MySqlLoaderOperator(
 			task_id='pl_prediction_mysql_insert',
 			query=query_nw,
 			data=mysql_data,
@@ -449,6 +441,7 @@ class ml_tf_implementer(ml_classifier):
 			queue=Q_PUBLIC,
 			dag=dag_obj
 			)
-	    mysql_pl_predicted_data.execute(dag_obj)	
-	    logging.info('After prediction$$$ --%s %s' % (machine,mysql_data))
+		print dir(mysql_pl_predicted_data)
+		mysql_pl_predicted_data.execute(dag_obj)	
+	        logging.info('After prediction$$$ --%s %s' % (machine,mysql_data))
 		

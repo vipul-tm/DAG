@@ -236,15 +236,16 @@ def createDict(data):
 	return rules
 
 def process_kpi_rules(all_services_dict):
+	#TODO Update this code for both ul_issue and other KPIS
 	kpi_rule_dict = {}
 	formula_mapper = eval(Variable.get('ul_issue_kpi_to_formula_mapping'))
 	kpi_services_mapper = eval(Variable.get('ul_issue_services_mapping'))
-
+	kpi_services_mapper = eval(Variable.get('provision_services_mapping'))
+	formula_mapper = eval(Variable.get('provision_kpi_to_formula_mapping'))
 	for service in all_services_dict.keys():
-		if "_ul_issue_kpi" in service:
+		if "provis_kpi" in service:
 			try:
-				print 1
-				print service
+				
 				device_type = ""
 				for device_type_loop in formula_mapper:
 					if service in formula_mapper.get(device_type_loop):
@@ -258,7 +259,7 @@ def process_kpi_rules(all_services_dict):
 				"formula":"%s",
 				"isarray":[False,False],
 				"service":kpi_services,
-				"arraylocations":range(len(kpi_services)) if len(kpi_services) >= 2 else 0
+				"arraylocations":0
 				}
 			except Exception:
 				print service
@@ -281,7 +282,7 @@ def generate_kpi_rules():
 
 	service_rules = eval(Variable.get('rules'))
 	processed_kpi_rules = process_kpi_rules(service_rules)
-	Variable.set("kpi_rules",str(processed_kpi_rules))
+	#Variable.set("kpi_rules",str(processed_kpi_rules))
 
 def generate_kpi_prev_states():
 	ul_tech = eval(Variable.get('ul_issue_kpi_technologies'))

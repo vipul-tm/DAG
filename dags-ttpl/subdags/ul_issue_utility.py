@@ -135,7 +135,7 @@ def calculate_wimax_bs_ul_issue(ss_data,bs,bs_services,ss_services):
 								if ss_processed_data.get(ss_service):
 									if ss_processed_data.get(ss_service) == 1:
 										bs_ul_issue = bs_ul_issue+1
-										print "////%s,%s"%(bs_ul_issue,bs.get('ipaddress'))
+										
 
 									
 						else:

@@ -46,3 +46,10 @@ print memc_cnx.get('%s_cambium_rereg_count' % '10.171.28.51')
 print "uas rad5k"
 print memc_cnx.get('%s_uas_list' % '10.172.206.40')
 print memc_cnx.get('%s_rad5k_ss_ul_mod' % '10.172.206.40')
+
+
+print memc_cnx.get('%s_rad5kjet_uas_list' % '10.133.26.79')
+print memc_cnx.get('%s_rad5kjet_ss_ul_mod' % '10.133.26.79')
+
+
+    

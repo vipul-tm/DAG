@@ -34,11 +34,14 @@ class MySqlLoaderOperator(BaseOperator):
 	def execute(self,context):
 		hook = MySqlHook(mysql_conn_id=self.mysql_conn_id)
 		if self.data=="" and self.redis_key != "" and self.redis_conn_id != "":
-			print self.redis_key
+			
 			self.data = eval(self.redis_hook.get(self.redis_key))
-			print type(self.data),len(self.data),self.data[0],type(self.data[0])
+			#print type(self.data),len(self.data),self.data[0],type(self.data[0])
+			if len(self.data) <=0:
+				logging.error("Not inserting data as the provided key is empty")
+				return 1
 		try:
-		    print "Started Exec"
+		    #print "Started Exec"
 		    conn = hook.get_conn()
 		    cursor = conn.cursor()
 		    cursor.executemany(self.sql, self.data)

@@ -90,8 +90,10 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
  		)
 	def get_severity_values(service):
 		all_sev = rules.get(service)
+		severity_len = len(all_sev)+1
+
 		sev_values = []
-		for i in range(1,len(all_sev)+1):
+		for i in range(1,severity_len):
 			sev_values.append(all_sev.get("Severity"+str(i))[1].get("value"))
 		return sev_values
 	#TODO: Add EXOR iff required
@@ -396,7 +398,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 		rad5k_helper_service = ['rad5k_ss_dl_uas','rad5k_ss_ul_modulation']
 		wimax_sector_id_list = ['wimax_pmp1_ul_util_bgp','wimax_pmp2_dl_util_bgp','wimax_pmp1_dl_util_bgp','wimax_pmp2_ul_util_bgp']
 		provis_services= ['wimax_ul_rssi','wimax_dl_rssi','wimax_dl_cinr','wimax_dl_cinr','wimax_ss_ptx_invent','cambium_ul_rssi','cambium_dl_rssi','cambium_dl_jitter','cambium_ul_jitter','cambium_rereg_count','radwin_rssi','radwin_uas']
-
+		rad5k_jet_helper_service = ['rad5kjet_ss_uas','rad5kjet_ss_ul_modulation']
 		data_dict_sample =  {'age': 'unknown',
 		 'check_time': 'unknown',
 		 'ds': 'unknown',
@@ -421,6 +423,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 		logging.info("Time for redis Input = "+ str(time.time() - start_time))
 		service_list = []
 		start_time = time.time()
+
 		try:
 			if len(slot_data) > 0:
 				for device_data in slot_data:
@@ -430,6 +433,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 					refer = ""
 
 					ds_values = device_data[7].split('=')
+					
 
 					if len(device_data) < 8 or device_data[0] in device_down_list or not len(device_data[-1]):
 						logging.info("Ommiting device %s"%device_data[0])
@@ -447,8 +451,10 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 							
 					
 	#####################################################################################################################################
+					
 					severity_war_cric  = get_severity_values(device_data[2])
 					#logging.info("FOR device %s"%device_data[0])
+					
 					data_dict['host'] = device_data[0]
 					data_dict['ip_address'] = device_data[1]
 					data_dict['ds'] = ds_values[0] if len(ds_values) >= 1  else ''
@@ -468,17 +474,33 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 
 	##########################SOME ADDITIONAL HANDLING OF SERVICES##########################################################################
 					ip_address = data_dict['ip_address']
+
+					if ip_address == '10.133.26.79':
+						print data_dict
+					
 					value = data_dict['cur']
 					if str(data_dict['service']) in rad5k_helper_service:
 						
 						if str(data_dict['service']) == 'rad5k_ss_ul_modulation':
-							
+								key = ip_address+ "_rad5k_ss_ul_mod"
 								key = str(key)
 								memcachelist(key,value,memc_con)
 						elif str(data_dict['service']) == 'rad5k_ss_dl_uas':
 								key = ip_address+ "_uas_list"
 								key = str(key)
 								memcachelist(key,value,memc_con)
+
+					if str(data_dict['service']) in rad5k_jet_helper_service:
+						
+						if str(data_dict['service']) == 'rad5kjet_ss_ul_modulation':
+								key = ip_address+ "_rad5kjet_ss_ul_mod"
+								key = str(key)
+								memcachelist(key,value,memc_con)
+						elif str(data_dict['service']) == 'rad5kjet_ss_uas':
+								key = ip_address+ "_rad5kjet_uas_list"
+								key = str(key)
+								memcachelist(key,value,memc_con)
+
 
 					if str(data_dict['service']) in kpi_helper_services:
 						key = ip_address+ "_"+str(data_dict['service'])
