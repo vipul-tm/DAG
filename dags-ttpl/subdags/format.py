@@ -89,8 +89,18 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 			start_date=start_date,
  		)
 	def get_severity_values(service):
+
 		all_sev = rules.get(service)
-		severity_len = len(all_sev)+1
+		
+		try:
+			if all_sev:
+				severity_len = len(all_sev)+1
+			else:
+				severity_len = 0
+				logging.warning("No rules in rules varaible for %s"%(service))
+		except Exception:
+			logging.error("No rules in rules varaible for %s due which exception is generated."%(service))
+
 
 		sev_values = []
 		for i in range(1,severity_len):
@@ -331,6 +341,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 			
 
 			threshold_values = get_threshold(slot[-1])
+
 			rt_min_cur = threshold_values.get('rtmin').get('cur')
 			rt_max_cur = threshold_values.get('rtmax').get('cur')
 			host_state = "up" if not int(slot[2]) else "down"
@@ -353,12 +364,12 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 
 				if data_source in exclude_network_datasource:
 					continue
-				if network_dict['ip_address'] ==  '10.172.241.24':
-					logging.info("Evaluating for %s"%(network_dict['ip_address']))
+				
 
 				value = threshold_values.get(data_source).get("cur")
 				key=str(device_type+"_"+data_source)
-
+				thresholds_from_rules = get_severity_values(key)
+				
 				if float(value) == 100:
 					host_state = "down"
 				else:
@@ -372,8 +383,8 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 					
 				network_dict['ds'] = data_source
 				network_dict['cur'] = value
-				network_dict['war'] = threshold_values[data_source].get('war') if threshold_values[data_source].get('war') else ''
-				network_dict['cric'] = threshold_values[data_source].get('cric') if threshold_values[data_source].get('cric') else ''
+				network_dict['war'] = thresholds_from_rules[1] if thresholds_from_rules else ''
+				network_dict['cric'] = thresholds_from_rules[0] if thresholds_from_rules else ''
 				network_dict['refer'] = str(calculate_refer(slot[0],network_dict['severity'],data_source,all_down_devices_states,network_dict['local_timestamp'])) #TODO: Here the same refer is beig calculate for pl and rta which will although be one only
 				network_dict['age'] = calculate_age(slot[0],network_dict['severity'],data_source,network_dict['local_timestamp'])
 

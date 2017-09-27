@@ -92,6 +92,34 @@ class NetworkView(BaseView):
            
         return self.render("rules_plugin/rules.html",attributes=attributes,data=data_to_page)
 
+class RedisKeyView(BaseView):
+    @expose('/')
+    def test(self):
+        # in this example, put your test_plugin/test.html template at airflow/plugins/templates/test_plugin/test.htm
+        redis_hook_6 = RedisHook(redis_conn_id="redis_hook_6")
+        redis_hook_7 = RedisHook(redis_conn_id="redis_hook_7")
+        ulissue_keys = redis_hook_6.get_keys("aggregated_*")
+        provis_keys = redis_hook_7.get_keys("aggregated_*")
+        data_to_page_ul = []
+        data_to_page_provis = []
+        attributes = []
+        combined_data = []
+
+        for key in ulissue_keys:
+            data = eval(redis_hook_6.get(key))
+            for device_dict in data:
+                data_to_page_ul.append(device_dict)
+
+        for key in provis_keys:
+            data = eval(redis_hook_7.get(key))
+            for device_dict in data:
+                data_to_page_provis.append(device_dict)
+    
+        data_to_page_ul.extend(data_to_page_provis)
+            
+        return self.render("rules_plugin/rules.html",attributes=attributes,data=data_to_page_ul)
+
+
 class PrevStateView(BaseView):
     @expose('/')
     def test(self):
@@ -141,7 +169,7 @@ v = TestView(category="Rule Plugin", name="Rules View")
 v2 = NetworkView(category="Rule Plugin", name="Network")
 v3 = ServiceView(category="Rule Plugin", name="Service")
 v4 = PrevStateView(category="Rule Plugin", name="Previous States")
-
+v5 = RedisKeyView(category="Rule Plugin", name="KPI Data")
 # Creating a flask blueprint to intergrate the templates and static folder
 bp = Blueprint(
     "rule_plugin", __name__,
@@ -165,6 +193,6 @@ class AirflowTestPlugin(AirflowPlugin):
     hooks = [PluginHook]
     executors = [PluginExecutor]
     macros = [plugin_macro]
-    admin_views = [v,v2,v3,v4]
+    admin_views = [v,v2,v3,v4,v5]
     flask_blueprints = [bp]
     menu_links = [ml,ml2]

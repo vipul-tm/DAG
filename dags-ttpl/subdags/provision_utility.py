@@ -83,6 +83,7 @@ def calculate_cambium_ss_provision(cambium_ul_rssi,cambium_dl_rssi,cambium_dl_ji
 		return ss_state
 
 def calculate_radwin5k_ss_provision(radwin_rssi,radwin_uas):
+	ss_state = "unknown" 
 	try:
 		if radwin_rssi != None and int(radwin_rssi) < -80:
 			ss_state = "los"
