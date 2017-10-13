@@ -35,7 +35,7 @@ def get_from_socket(site_name, query):
     machine = site_name[:-8]
     #socket_ip = _LIVESTATUS[machine]['host']
     #socket_port = _LIVESTATUS[machine][site_name]['port']
-    s.connect(('10.133.19.165', 6561))
+    s.connect(('10.133.19.165', 6562))
     #s.connect(socket_path)
     s.settimeout(60.0)
     s.send(query)
@@ -75,8 +75,14 @@ service_perf_query = "GET services\nColumns: host_name host_address service_desc
                             "Or: 14\nNegate:\nOutputFormat: python\n"
 q3 = "GET services\nColumns: host_name host_address host_state service_description service_state plugin_output\n" + \
                 "Filter: service_description = wimax_topology\nOutputFormat: json\n"
-site_name = 'ospf1_slave_1'
-nw_qry_output = eval(get_from_socket(site_name, service_perf_query)) 
+
+query = "GET services\nColumns: host_name host_address host_state service_description service_state plugin_output\n" + \
+                "Filter: service_description = rad5kjet_topology_discover\nOutputFormat: json\n"
+
+
+
+site_name = 'ospf2_slave_1'
+nw_qry_output = eval(get_from_socket(site_name, query)) 
 
 for device in  nw_qry_output:
 	if device[1] == '10.133.26.42' or device[1] == '10.133.26.42' or device[1] == '10.133.26.77':

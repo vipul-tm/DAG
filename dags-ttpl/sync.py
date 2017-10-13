@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from airflow.models import Variable
 from airflow.operators import TriggerDagRunOperator
 from airflow.operators.subdag_operator import SubDagOperator
+from pprint import pprint
 import itertools
 import socket
 import sys
@@ -242,8 +243,10 @@ def process_kpi_rules(all_services_dict):
 	kpi_services_mapper = eval(Variable.get('ul_issue_services_mapping'))
 	kpi_services_mapper = eval(Variable.get('provision_services_mapping'))
 	formula_mapper = eval(Variable.get('provision_kpi_to_formula_mapping'))
+	util_mapper = eval(Variable.get('utilization_kpi_attributes'))
+	
 	for service in all_services_dict.keys():
-		if "provis_kpi" in service:
+		if "util_kpi" in service:
 			try:
 				
 				device_type = ""
@@ -256,7 +259,7 @@ def process_kpi_rules(all_services_dict):
 				kpi_rule_dict[service] = {
 				"name":service,
 				"isFunction":False,
-				"formula":"%s",
+				"formula":"calculate_%s_utilization"%(service),
 				"isarray":[False,False],
 				"service":kpi_services,
 				"arraylocations":0
@@ -291,6 +294,144 @@ def generate_kpi_prev_states():
 	for techs_bs in ul_tech:		
 		redis_hook_2.set("kpi_ul_prev_state_%s"%(ul_tech.get(techs_bs)),old_pl_data)
 		redis_hook_2.set("kpi_ul_prev_state_%s"%(techs_bs),old_pl_data)
+
+def generate_backhaul_inventory_for_util():
+	backhaul_inventory_data_query="""
+	select
+    device_device.ip_address,
+    device_device.device_name,
+    device_devicetype.name,
+    device_device.mac_address,
+	device_devicetype.agent_tag,
+    site_instance_siteinstance.name,
+    device_device.device_alias,
+    device_devicetechnology.name as techno_name,
+    group_concat(service_servicedatasource.name separator '$$') as port_name,
+    group_concat(inventory_basestation.bh_port_name separator '$$') as port_alias,
+    group_concat(inventory_basestation.bh_capacity separator '$$') as port_wise_capacity
+    from device_device
+    inner join
+    (device_devicetechnology, device_devicetype,
+    machine_machine, site_instance_siteinstance)
+    on
+    (
+    device_devicetype.id = device_device.device_type and
+    device_devicetechnology.id = device_device.device_technology and
+    machine_machine.id = device_device.machine_id and
+    site_instance_siteinstance.id = device_device.site_instance_id
+    )
+    inner join
+    (inventory_backhaul)
+    on
+    (device_device.id = inventory_backhaul.bh_configured_on_id OR device_device.id = inventory_backhaul.aggregator_id OR
+     device_device.id = inventory_backhaul.pop_id OR
+     device_device.id = inventory_backhaul.bh_switch_id OR
+     device_device.id = inventory_backhaul.pe_ip_id)
+    left join
+    (inventory_basestation)
+    on
+    (inventory_backhaul.id = inventory_basestation.backhaul_id)
+    left join
+    (service_servicedatasource)
+    on
+    (inventory_basestation.bh_port_name = service_servicedatasource.alias)
+    where
+    device_device.is_deleted=0 and
+    device_device.host_state <> 'Disable'
+    and
+    device_devicetype.name in ('Cisco','Juniper','RiCi', 'PINE','Huawei','PE')
+    group by device_device.ip_address;
+	"""
+
+	backhaul_data = execute_query(backhaul_inventory_data_query)
+	
+	bh_cap_mappng = {}
+	for device in backhaul_data:
+		bh_cap_mappng[device.get('device_name')] = {
+		 'port_name' : device.get('port_name').split("$$") if device.get('port_name') else None,
+		 'port_wise_capacity': device.get('port_wise_capacity').split("$$") if device.get('port_wise_capacity') else None,
+		 'ip_address':device.get('ip_address'),
+		 'port_alias':device.get('port_alias').split("$$") if device.get('port_alias') else None,
+		 'capacity': {}
+		 }
+		if device.get('port_name') and device.get('port_wise_capacity'):
+		 	for  index,port in enumerate(bh_cap_mappng.get(device.get('device_name')).get('port_name')):
+		 		#print index,bh_cap_mappng.get(device.get('device_name')).get('port_wise_capacity'),device.get('port_name')
+		 		try:
+		 			port_capacity = bh_cap_mappng.get(device.get('device_name')).get('port_wise_capacity')[index]
+		 		except IndexError:
+		 			port_capacity = bh_cap_mappng.get(device.get('device_name')).get('port_wise_capacity')[index-1]
+		 		except Exception:
+		 			port_capacity = None
+
+		 		bh_cap_mappng.get(device.get('device_name')).get('capacity').update({port:port_capacity})
+
+	print "Setting redis Key backhaul_capacities with backhaul capacities "
+	#for dev in bh_cap_mappng:
+	#	print bh_cap_mappng.get(dev).get('capacity')
+	redis_hook_2.set("backhaul_capacities",str(bh_cap_mappng))
+	print "Successfully Created Key: backhaul_capacities in Redis. "
+
+
+
+
+def generate_basestation_inventory_for_util():
+	basestation_inventory_data_query="""
+	select
+    DISTINCT(device_device.ip_address),
+    device_device.device_name,
+    device_devicetype.name,
+    device_device.mac_address,
+    device_device.ip_address,
+ 	device_devicetype.agent_tag,
+    inventory_sector.name,
+    site_instance_siteinstance.name,
+    device_device.device_alias,
+    device_devicetechnology.name as techno_name,
+    inventory_circuit.qos_bandwidth as QoS_BW
+    from device_device
+
+    inner join
+    (device_devicetechnology, device_devicemodel, device_devicetype, machine_machine, site_instance_siteinstance, inventory_sector)
+    on
+    (
+    device_devicetype.id = device_device.device_type and
+    device_devicetechnology.id = device_device.device_technology and
+    device_devicemodel.id = device_device.device_model and
+    machine_machine.id = device_device.machine_id and
+    site_instance_siteinstance.id = device_device.site_instance_id and
+    inventory_sector.sector_configured_on_id = device_device.id
+    )
+
+    left join (inventory_circuit)
+    on (
+    inventory_sector.id = inventory_circuit.sector_id
+    )
+
+    where device_device.is_deleted=0
+    and
+    device_device.host_state <> 'Disable'
+    and
+    device_devicetechnology.name in ('WiMAX', 'P2P', 'PMP')
+    and
+    device_devicetype.name in ('Radwin2KBS', 'CanopyPM100AP', 'CanopySM100AP', 'StarmaxIDU', 'Radwin5KBS','Cambium450iAP');
+	"""
+
+	basestation_data = execute_query(basestation_inventory_data_query)
+	
+	bh_cap_mappng = {}
+	for device in basestation_data:
+		bh_cap_mappng[device.get('device_name')] = {		 
+		 'qos_bandwidth': device.get('QoS_BW') if device.get('QoS_BW') else None,
+		 'ip_address':device.get('ip_address'),
+		 }
+
+	print "Setting redis Key basestation_capacities with basestation capacities "
+	#for dev in bh_cap_mappng:
+	#	print bh_cap_mappng.get(dev).get('capacity')
+	redis_hook_2.set("basestation_capacities",str(bh_cap_mappng))
+	print "Successfully Created Key: basestation_capacities in Redis. "
+
 ##################################################################TASKS#########################################################################3
 create_devicetype_mapping_task = PythonOperator(
     task_id="generate_host_devicetype_mapping",
@@ -316,6 +457,20 @@ create_kpi_prev_states = PythonOperator(
     provide_context=False,
     python_callable=generate_kpi_prev_states,
     #params={"redis_hook_2":redis_hook_2},
+    dag=main_etl_dag)
+
+generate_backhaul_data = PythonOperator(
+    task_id="generate_backhaul_inventory",
+    provide_context=False,
+    python_callable=generate_backhaul_inventory_for_util,
+    #params={"table":"nocout_24_09_14"},
+    dag=main_etl_dag)
+
+generate_basestation_data = PythonOperator(
+    task_id="generate_basestation_inventory",
+    provide_context=False,
+    python_callable=generate_basestation_inventory_for_util,
+    #params={"table":"nocout_24_09_14"},
     dag=main_etl_dag)
 
 

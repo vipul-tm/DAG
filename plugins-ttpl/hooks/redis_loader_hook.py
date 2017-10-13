@@ -15,7 +15,8 @@
 from redis import StrictRedis
 
 from airflow.hooks.base_hook import BaseHook
-
+import ujson # for zadd_compress
+import zlib # for zadd_compress
 
 class RedisHook(BaseHook):
 	"""
@@ -117,17 +118,81 @@ class RedisHook(BaseHook):
 
 		"""
 		try:
-		    conn.zadd(measurement_name,time,value)
-		    return True
+			conn.zadd(measurement_name,time,value)
+			return True
 		except Exception,e:
-		    print e
+			print e
 	def get_event(conn,measurement_name,start_time,end_time):
 		"""
 		Get measurement metrics into redis db with timestamp labeled on them 
 
 		"""
 		try:
-		    data = conn.zrangebyscore(measurement_name,start_time,end_time)
-		    return data
+			data = conn.zrangebyscore(measurement_name,start_time,end_time)
+			return data
 		except Exception,e:
-		    print e
+			print e
+
+	def zadd_compress(self,set_name,time,data_value):
+	   """ adds data to redis on sorted set """
+	   try:
+		   conn=self.get_conn()
+		   serialized_value = ujson.dumps(data_value)
+		   compressed_value =zlib.compress(serialized_value)
+		   conn.zadd(set_name,time,compressed_value)
+	   except Exception,exc:
+		   print "Exception in zadd_compress ",exc
+		   #error('Redis error in adding in set{0}'.format(exc))
+
+	def multi_set(conn, data_values, perf_type=''):
+		""" Sets multiple key values through pipeline"""
+		KEY = '%s:%s:%s' % (perf_type, '%s', '%s')
+		pipe = conn.pipeline(transaction=True)
+		# keep the provis data keys with a timeout of 5 mins
+		[pipe.setex(KEY %
+				 (d.get('device_name'), d.get('service_name')),
+				 300, d.get('current_value')) for d in data_values
+		 ]
+		try:
+			pipe.execute()
+		except Exception as exc:
+			print "Exception in multi_set ",exc
+			#error('Redis pipe error in multi_set: {0}'.format(exc))
+
+	def redis_update(conn, data_values, update_queue=False, perf_type=''):
+		""" Updates multiple hashes in single operation using pipelining"""
+		KEY = '%s:%s:%s:%s' % (perf_type, '%s', '%s', '%s')
+		p = conn.pipeline(transaction=True)
+		try:
+			# update the queue values
+			if update_queue:
+				KEY = '%s:%s:%s' % (perf_type, '%s', '%s')
+			   	devices = [(d.get('device_name'), d.get('service_name'))for d in data_values]
+			   	# push the values into queues
+			   	[p.rpush(KEY % (d.get('device_name'), d.get('service_name')), d.get('severity')) for d in data_values]
+				# perform all operations atomically
+				p.execute()
+				# calc queue length corresponds to every host entry
+				[p.llen(KEY % (x[0], x[1])) for x in devices]
+			   	queues_len = p.execute()
+				#host_queuelen_map = zip(devices, queues_len)
+				# keep only 2 latest values for each host entry, if any
+				#trim_hosts = filter(lambda x: x[1] > 2, host_queuelen_map)
+				trim_hosts = []
+				for _, x in enumerate(zip(devices, queues_len)):
+					if x[1] > 2:
+						trim_hosts.append(x[0])
+						[p.ltrim(KEY % (x[0], x[1]), -2, -1) for x in trim_hosts]
+				# update the hash values
+					else:
+						[p.hmset(KEY %(d.get('device_name'), d.get('service_name'), d.get('data_source')),d) for d in data_values]
+						# perform all operations atomically
+				p.execute()
+		except Exception as exc:
+				#error('Redis pipe error in update... {0}, retrying...'.format(exc))
+				print "Exception in redis_update ",exc
+				# send the task for retry
+				#Task.retry(args=(data_values), kwargs={'perf_type': perf_type},
+				#			   max_retries=2, countdown=10, exc=exc)
+
+

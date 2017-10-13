@@ -51,6 +51,7 @@ exclude_network_datasource = eval(Variable.get("exclude_network_datasource"))
 databases=eval(Variable.get('databases'))
 redis_hook_5 = RedisHook(redis_conn_id="redis_hook_5")
 redis_hook_2 = RedisHook(redis_conn_id="redis_cnx_2")
+redis_availablity_0 = RedisHook(redis_conn_id="redis_availablity_0")
 all_devices_states = get_previous_device_states(redis_hook_5)
 all_devices_states_rta = get_previous_device_states(redis_hook_5,"rta")
 redis_hook_network_alarms = RedisHook(redis_conn_id="redis_hook_network_alarms")
@@ -410,6 +411,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 		wimax_sector_id_list = ['wimax_pmp1_ul_util_bgp','wimax_pmp2_dl_util_bgp','wimax_pmp1_dl_util_bgp','wimax_pmp2_ul_util_bgp']
 		provis_services= ['wimax_ul_rssi','wimax_dl_rssi','wimax_dl_cinr','wimax_dl_cinr','wimax_ss_ptx_invent','cambium_ul_rssi','cambium_dl_rssi','cambium_dl_jitter','cambium_ul_jitter','cambium_rereg_count','radwin_rssi','radwin_uas']
 		rad5k_jet_helper_service = ['rad5kjet_ss_uas','rad5kjet_ss_ul_modulation']
+		ss_provis_helper_serv_data = []
 		data_dict_sample =  {'age': 'unknown',
 		 'check_time': 'unknown',
 		 'ds': 'unknown',
@@ -480,6 +482,9 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 					data_dict['age'] = int(device_data[5]) if device_data[5] else 0 #TODO: Calclate at my end change of severiaty
 					data_dict['site'] = site_name
 					data_dict['refer'] = refer
+					data_dict['min_value'] = data_dict['cur']
+					data_dict['max_value'] = data_dict['cur']
+					data_dict['avg_value'] = data_dict['cur']
 					data_dict['machine_name']=redis_queue_slot.split("_")[1]
 					service_list.append(data_dict.copy())
 
@@ -511,6 +516,13 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 								key = ip_address+ "_rad5kjet_uas_list"
 								key = str(key)
 								memcachelist(key,value,memc_con)
+
+					if str(data_dict['service']) in provis_services:
+						ss_provis_helper_serv_data.append({
+							'device_name': str(data_dict['host']),
+							'service_name': str(data_dict['service']),
+							'current_value': str(data_dict['cur'])
+						})
 
 
 					if str(data_dict['service']) in kpi_helper_services:
@@ -548,6 +560,10 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 				logging.info("Successfully Inserted data to redis KEY :"+redis_queue_slot+"_result of length "+str(len(service_list)))
 			else:
 				logging.info("0 Len data recieved after processing omitting ALL")
+			if len(ss_provis_helper_serv_data) > 0:
+				redis_hook_4.rpush("%s_provis_availablity"%(site_name),ss_provis_helper_serv_data)
+			else:
+				logging.info("No Provis helper data")
 		except Exception:
 			logging.info("Unable to Wite to redis key created")
 			traceback.print_exc()
@@ -589,6 +605,42 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 			logging.error("Unable to put in the combined Network data to memcache.")
 			traceback.print_exc()
 			return False
+
+
+	def store_availablity_data_in_redis(**kwargs):
+		nocout_site_name = kwargs.get('params').get('site')
+		data_type = kwargs.get('params').get('dev_type')
+		all_data = []
+
+		this_time = datetime.now()
+		t_stmp = this_time + timedelta(minutes=-(this_time.minute % 5))
+		t_stmp = t_stmp.replace(second=0,microsecond=0)
+		current_time =int(time.mktime(t_stmp.timetuple()))
+		data = redis_hook_4.get("%s")
+		try:
+			if data_type == "network":
+				set_name = nocout_site_name + "_network"
+				keys = redis_hook_4.get_keys("nw_%s_*_result"%(nocout_site_name))
+				
+		   	else:
+		   		set_name = nocout_site_name + "_service"
+		   		keys = redis_hook_4.get_keys("sv_%s_*_result"%(nocout_site_name))
+
+		   	for key in keys:
+		   		
+				data = redis_hook_4.rget(key)
+				
+				
+				for datum in data:
+					datum=eval(datum)
+				all_data.extend(datum)
+
+		   	redis_availablity_0.zadd_compress(set_name,current_time,all_data)
+		   	
+		except Exception,e:
+			logging.info("Error in storing redis : %s"%(e))
+			pass
+
 
 	def aggregate_sv_data(**kwargs):
 		logging.info("Aggregating Service Data")
@@ -693,6 +745,8 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 	network_format_sensor_dict = {}
 	network_sensor_sites = []
 	service_sensor_sites = []
+	availablity_nw_tasks = {}
+	availablity_sv_tasks = {}
 	update_refer = PythonOperator(
 							task_id="update_device_states",
 							provide_context=False,
@@ -786,6 +840,30 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 
 					event_nw >> aggregate_nw_smptt_tasks.get(machine_name)
 
+				if site_name not in availablity_nw_tasks.keys():
+					availablity_task = PythonOperator(
+						task_id="store_nw_%s"%(site_name),
+						provide_context=True,
+						python_callable=store_availablity_data_in_redis,
+						params={"site":site_name,'dev_type':"network"},
+						dag=dag_subdag_format,
+						queue=celery_queue
+						)
+					availablity_nw_tasks[site_name] = availablity_task
+
+				if site_name not in availablity_sv_tasks.keys():
+					availablity_task = PythonOperator(
+						task_id="store_sv_%s"%(site_name),
+						provide_context=True,
+						python_callable=store_availablity_data_in_redis,
+						params={"site":site_name,'dev_type':"service"},
+						dag=dag_subdag_format,
+						queue=celery_queue
+						)
+					availablity_sv_tasks[site_name] = availablity_task
+					
+
+
 
 				for slot in range(1,total_slot+1):
 					network_tasks = None
@@ -814,6 +892,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 						nw_extract_task_sensor >> network_tasks
 						
 						network_tasks >> event_site_tasks.get(site_name)
+						network_tasks >> availablity_nw_tasks.get(site_name)
 						network_tasks >> aggregate_nw_tasks.get(machine_name)
 					except Exception:
 						logging.info("Unable to attach tasks to %s"%site)
@@ -872,7 +951,7 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 			
 					service_format_task_sensor >> service_tasks
 					service_tasks >> aggregate_sv_tasks.get(machine_name)
-
+					service_tasks >> availablity_sv_tasks.get(site_name)
 		
 		Variable.set("service_memc_key",str(result_sv_memc_key))
 	except Exception:

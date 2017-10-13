@@ -35,6 +35,7 @@
             var loc = window.location.pathname;
             console.log(loc)
             page = loc.split("/")[2]
+            console.log(page)
             if (page == "testview")
             {
                 rule_table = $("#ruletable").dataTable({
@@ -114,6 +115,36 @@
                 });
                 
             }
+            else if (page == "rediskeyview"){
+                rule_table = $("#ruletable").dataTable({
+                    "aoColumns": [
+                        { "mData": "check_timestamp", 'sTitle': 'check_timestamp', 'sWidth': 'auto', 'bSortable': true},
+                        { "mData": "severity", 'sTitle': 'severity', 'sWidth': 'auto', 'bSortable': true },
+                        { "mData": "service_name", 'sTitle': 'service', 'sWidth': 'auto', 'bSortable': true},
+                        { "mData": "age", 'sTitle': 'age', 'sWidth': 'auto', 'bSortable': true},
+                        { "mData": "sys_timestamp", 'sTitle': 'local_timestamp', 'sWidth': 'auto', 'bSortable': true},
+                        { "mData": "site_name", 'sTitle': 'site', 'sWidth': 'auto', 'bSortable': true},
+                        { "mData": "warning_threshold", 'sTitle': 'war', 'sWidth': 'auto', 'bSortable': true},
+                        { "mData": "device_name", 'sTitle': 'host', 'sWidth': 'auto', 'bSortable': true},
+                        { "mData": "machine_name", 'sTitle': 'machine_name', 'sWidth': 'auto', 'bSortable': true},
+                        { "mData": "refer", 'sTitle': 'refer', 'sWidth': 'auto', 'bSortable': true},
+                        { "mData": "critical_threshold", 'sTitle': 'cric', 'sWidth': 'auto', 'bSortable': true},
+                        { "mData": "ip_address", 'sTitle': 'ip_address', 'sWidth': 'auto', 'bSortable': true},
+                        { "mData": "data_source", 'sTitle': 'ds', 'sWidth': 'auto', 'bSortable': true},
+                        { "mData": "current_value", 'sTitle': 'cur', 'sWidth': 'auto', 'bSortable': true},
+                        { "mData": "avg_value", 'sTitle': 'avg_value', 'sWidth': 'auto', 'bSortable': true},
+                        
+                   ],
+                   "sScrollY": "500px",
+                   "bPaginate": true,
+                    "pageLength": 100,
+                    "dom": 'Bfrtip',
+                    "buttons": [ 'excel']
+
+                   // "bScrollCollapse": true
+                });
+                
+            }
             var data_list = [];
             if (page == "testview"){
                 var a = {{ data|tojson|safe }};
@@ -150,10 +181,16 @@
                         
                     
                 }
+                $(".login-title").html("Rules")
            }
            else if (page == "networkview" || page == "serviceview"){
             data_list = {{ data|tojson|safe }};
-           
+           $(".login-title").html(page)
+           }
+           else if (page == "rediskeyview"){
+                     
+            data_list = {{ data|tojson|safe }};
+           $(".login-title").html("KPI Data")
            }
             rule_table.fnAddData(data_list)
         })

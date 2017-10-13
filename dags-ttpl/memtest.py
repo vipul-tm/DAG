@@ -1,7 +1,7 @@
 import memcache;
 import telnetlib
 MEMCACHE_CONFIG = "10.133.19.165:11211";
-memc_cnx= memcache.Client([MEMCACHE_CONFIG], debug=1 );
+memc_cnx= memcache.Client([MEMCACHE_CONFIG,'10.133.12.163:11211'], debug=1 );
 #memc_cnx.set('nw_nocout_ospf1','')
 
 
@@ -50,6 +50,7 @@ print memc_cnx.get('%s_rad5k_ss_ul_mod' % '10.172.206.40')
 
 print memc_cnx.get('%s_rad5kjet_uas_list' % '10.133.26.79')
 print memc_cnx.get('%s_rad5kjet_ss_ul_mod' % '10.133.26.79')
+print memc_cnx.get("master_ua_switch")
 
 
     
