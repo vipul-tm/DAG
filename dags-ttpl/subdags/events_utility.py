@@ -138,14 +138,18 @@ def update_last_device_down(redis_hook=redis_hook_4):
 							all_devices_down_states[new_host] = {'state':old_state,'since':old_refer}
 					except Exception:
 						logging.warning("Unable to find host %s in old state for host " %new_host)
-						if new_state == "up":
-							all_devices_down_states[new_host] = {'state':new_state,'since':old_refer}
-							logging.info("Created new up state dict for %s as severity %s and since %s"%(new_host,new_state,old_refer))
-						elif new_state == "down":
+						try:
+							if new_state == "up":
+								all_devices_down_states[new_host] = {'state':new_state,'since':new_refer}
+								logging.info("Created new up state dict for %s as severity %s and since %s"%(new_host,new_state,old_refer))
+							elif new_state == "down":
+								all_devices_down_states[new_host] = {'state':new_state,'since':new_refer}
+								logging.info("Created new down state dict for %s as severity %s and since %s"%(new_host,new_state,new_refer))
+							else:
+								logging.info("Other State than up or down")
+						except Exception:
 							all_devices_down_states[new_host] = {'state':new_state,'since':new_refer}
 							logging.info("Created new down state dict for %s as severity %s and since %s"%(new_host,new_state,new_refer))
-						else:
-							logging.info("Other State than up or down")
 	try:
 
 		redis_hook_5.set("all_devices_down_state",str(all_devices_down_states))

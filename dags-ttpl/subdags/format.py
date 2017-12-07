@@ -634,9 +634,13 @@ def format_etl(parent_dag_name, child_dag_name, start_date, schedule_interval, c
 				for datum in data:
 					datum=eval(datum)
 				all_data.extend(datum)
-
-		   	redis_availablity_0.zadd_compress(set_name,current_time,all_data)
-		   	
+			if not debug_mode:
+				try:
+		   			redis_availablity_0.zadd_compress(set_name,current_time,all_data)
+		   		except Exception:
+		   			logging.error("Unable to add availablity data in redis check zadd_compress in redis_loader_hook")
+		   	else:
+		   		logging.info("Debug Mode is active  Not inserting availablity data")
 		except Exception,e:
 			logging.info("Error in storing redis : %s"%(e))
 			pass

@@ -45,7 +45,14 @@ default_args = {
 redis_hook_4 = RedisHook(redis_conn_id="redis_hook_4") #number specifies the DB in Use
 redis_hook_5 = RedisHook(redis_conn_id="redis_hook_5")
 redis_hook_6 = RedisHook(redis_conn_id="redis_hook_6")
-memc_con = MemcacheHook(memc_cnx_id = 'memc_cnx')
+
+DEBUG_MODE = False
+down_devices = []
+
+memc_con_cluster = MemcacheHook(memc_cnx_id = 'memc_cnx')
+vrfprv_memc_con  = MemcacheHook(memc_cnx_id = 'vrfprv_memc_cnx')
+pub_memc_con  = MemcacheHook(memc_cnx_id = 'pub_memc_cnx')
+
 INSERT_HEADER = "INSERT INTO %s.performance_utilization"
 INSERT_TAIL = """
 (machine_name,current_value,service_name,avg_value,max_value,age,min_value,site_name,data_source,critical_threshold,device_name,severity,sys_timestamp,ip_address,warning_threshold,check_timestamp,refer ) 
@@ -131,7 +138,7 @@ child_dag_name,
 				'machine_name':'unknown'
 				}
 
-		cur_processing_time = backtrack_x_min(time.time(),300) # this is used to rewind the time to previous multiple of 5 value so that kpi can be shown accordingly
+		cur_processing_time = backtrack_x_min(time.time(),300) +120 # this is used to rewind the time to previous multiple of 5 value so that kpi can be shown accordingly
 		bs_devices_list = []
 		#{'wimax_bs_ul_issue_kpi': '404', 'connectedss': {1: ['10.170.72.33', '10.170.72.39'], 2: ['10.170.72.40', '10.170.72.11', '10.170.72.31', '10.170.72.58', '10.170.72.20', '10.170.72.47', '10.170.72.52', '10.170.72.56', '10.170.72.61']}, 'device_type': 'StarmaxIDU', 'services': ['wimax_bs_ul_issue_kpi'], 'pmp1_sec': '00:0a:10:08:02:41', 'hostname': '28455', 'ipaddress': '10.170.72.2', 'pmp2_sec': '00:0a:10:08:02:43', 'site': 'ospf1_slave_1'}
 
@@ -146,8 +153,7 @@ child_dag_name,
 			bs_kpi_dict['device_name']=bs_device.get('hostname')
 			bs_kpi_dict['site_name']= bs_device.get('site')
 			bs_kpi_dict['ip_address']=bs_device.get('ipaddress')
-			bs_kpi_dict['max_value']=0
-			bs_kpi_dict['avg_value']=0
+			
 
 			for service in bs_device.get('services'):
 				thresholds = get_severity_values(service)
@@ -155,17 +161,22 @@ child_dag_name,
 				bs_kpi_dict['warning_threshold']= thresholds[1]
 				bs_kpi_dict['service_name']= service
 
-				bs_kpi_dict['min_value']= 0
 				
 				for data_source in bs_device.get(service):
 					#data_source = 'ul_issue'
-					bs_kpi_dict['data_source']=data_source+"_ul_issue" if device_type == "StarmaxIDU" else 'bs_ul_issue'
-					bs_kpi_dict['current_value']= 0 if bs_device.get(service).get(data_source) == 405 else bs_device.get(service).get(data_source)
-					bs_kpi_dict['refer']=bs_device.get(data_source+'_sec')
-					bs_kpi_dict['severity']= calculate_severity(service,bs_kpi_dict['current_value'])
-					bs_kpi_dict['age']= calculate_age(hostname,bs_kpi_dict['severity'],bs_device.get('device_type'),cur_processing_time)
 					
-					if bs_kpi_dict['current_value'] not in ERROR_DICT.keys():
+					bs_kpi_dict['data_source']=data_source+"_ul_issue" if device_type == "StarmaxIDU" else 'bs_ul_issue'
+					bs_kpi_dict['current_value']= 0 if bs_device.get(service).get(data_source) > 100 else bs_device.get(service).get(data_source)
+					bs_kpi_dict['refer']=bs_device.get(data_source+'_sec')
+					bs_kpi_dict['severity']= "unknown"  if bs_device.get(service).get(data_source) > 100 else calculate_severity(service,bs_kpi_dict['current_value'])
+					bs_kpi_dict['age']= calculate_age(hostname,bs_kpi_dict['severity'],bs_device.get('device_type'),cur_processing_time)
+					bs_kpi_dict['min_value']= bs_kpi_dict['current_value']
+					bs_kpi_dict['max_value']=bs_kpi_dict['current_value']
+					bs_kpi_dict['avg_value']=bs_kpi_dict['current_value']
+
+					
+
+					if bs_kpi_dict['current_value'] not in ERROR_FOR_DEVICE_OMITTED:
 						bs_devices_list.append(bs_kpi_dict.copy())	
 				 	
 				
@@ -202,7 +213,7 @@ child_dag_name,
 				}
 
 		ss_data =redis_hook_6.rget("calculated_ss_ul_issue_%s_%s"%(device_type,site_name))
-		cur_processing_time = backtrack_x_min(time.time(),300) # this is used to rewind the time to previous multiple of 5 value so that kpi can be shown accordingly
+		cur_processing_time = backtrack_x_min(time.time(),300) + 120 # this is used to rewind the time to previous multiple of 5 value so that kpi can be shown accordingly
 		ss_devices_list = []
 		for ss_device in ss_data:
 			ss_device = eval(ss_device)
@@ -245,13 +256,14 @@ child_dag_name,
 		device_type = kwargs.get("params").get("technology")
 		ss_data_dict = {}
 		all_ss_data = []
-		# print "+++++++++++++++++++++++++"
-		# try:
-			
-		# 	print len(hostnames_ss_per_site.get(site_name))
-		# except Exception:
-		# 	logging.info("No data found for %s"%(site_name))
-		# print "+++++++++++++++++++++++++"
+		if "vrfprv" in site_name:			
+			memc_con = vrfprv_memc_con
+				
+		elif "pub" in site_name:
+			memc_con = pub_memc_con
+		else:
+			memc_con = memc_con_cluster
+
 		if site_name not in hostnames_ss_per_site.keys():
 			logging.warning("No SS devices found for %s"%(site_name))
 			return 1
@@ -263,7 +275,10 @@ child_dag_name,
 			ss_data_dict['ipaddress'] = ip_address
 	
 			
-			for service in ul_issue_service_mapping.get(ss_name):			
+			for service in ul_issue_service_mapping.get(ss_name):
+				
+				
+
 				ss_data_dict[service] = memc_con.get("%s_%s"%(ip_address,service))
 			
 			all_ss_data.append(ss_data_dict.copy())
@@ -277,19 +292,29 @@ child_dag_name,
 			logging.warning("Unable to insert ss data into redis")
 		
 
-		#pprint(all_ss_data)
-
+		
 	def get_required_data_bs(**kwargs):
 		site_name = kwargs.get("params").get("site_name")
 		device_type = kwargs.get("params").get("technology")
 		bs_data_dict = {}
 		all_bs_data = []
 
+		if "vrfprv" in site_name:			
+			memc_con = vrfprv_memc_con
+				
+		elif "pub" in site_name:
+			memc_con = pub_memc_con
+		else:
+			memc_con = memc_con_cluster
+
+			
 		try:
 			for hostnames_dict in hostnames_per_site.get(site_name):
-				print hostnames_dict
+				
 				host_name = hostnames_dict.get("hostname")
 				ip_address = hostnames_dict.get("ip_address")
+				
+
 				connected_ss =  memc_con.get("%s_conn_ss"%(host_name))
 				bs_data_dict['hostname'] = host_name
 				bs_data_dict['ipaddress'] = ip_address
@@ -336,21 +361,16 @@ child_dag_name,
 				else:
 					devices[service] = eval(kpi_rules.get(service).get('formula'))
 
+				if devices['ipaddress'] == '10.157.206.3':
+					logging.info(devices)
+
+				
 			#IGNORING ERRORED DEVICES
 			if devices.get('services'):
 				for service_check in devices.get('services'):
-					if devices.get(service_check) not in ERROR_DICT.keys():
-						all_bs_calculated_data.append(devices.copy())
+					all_bs_calculated_data.append(devices.copy())
 
 
-		
-			# print dev.get('wimax_bs_ul_issue_kpi')
-			# if dev.get('wimax_bs_ul_issue_kpi') != '404' and (dev.get('wimax_bs_ul_issue_kpi').get('pmp1') > 0 or dev.get('wimax_bs_ul_issue_kpi').get('pmp2') > 0):
-			# 	print dev
-			# elif dev.get('wimax_bs_ul_issue_kpi') == '404':
-			# 	count=count+1
-			# else:
-			# 	print "%s-%s"%(dev.get('wimax_bs_ul_issue_kpi').get('pmp1'),dev.get('wimax_bs_ul_issue_kpi').get('pmp2'))
 		
 		if len(all_bs_calculated_data) > 0:
 			try:
@@ -397,6 +417,8 @@ child_dag_name,
 				else:
 					devices[service] = eval(kpi_rules.get(service).get('formula'))
 
+
+
 			ip_ul_mapper[devices.get('ipaddress')] = devices
 			ss_data.append(devices.copy())
 			
@@ -405,7 +427,7 @@ child_dag_name,
 		redis_hook_6.rpush("calculated_ss_ul_issue_kpi",ss_ul_issue_list)
 
 	def aggregate_ul_issue_data(*args,**kwargs):
-		print "Aggregating Data"
+		
 		machine_name = kwargs.get("params").get("machine_name")
 		
 		bs_or_ss = kwargs.get("params").get("type")
@@ -471,35 +493,37 @@ child_dag_name,
 			UPDATE_QUERY = UPDATE_QUERY.replace('\n','')
 
 			for bs_or_ss in device_tech.keys():
-					
-				insert_data_in_mysql = MySqlLoaderOperator(
-					task_id ="upload_%s_data_%s"%(bs_or_ss,each_machine_name),
-					dag=ul_issue_kpi_subdag_dag,
-					query=INSERT_QUERY,
-					#data="",
-					redis_key="aggregated_ul_issue_%s_%s_%s"%(each_machine_name,bs_or_ss,device_tech.get(bs_or_ss)),
-					redis_conn_id = "redis_hook_6",
-					mysql_conn_id='mysql_uat',
-					queue = celery_queue,
-					trigger_rule = 'all_done'
-					)
-				update_data_in_mysql = MySqlLoaderOperator(
-					task_id ="update_%s_data_%s"%(bs_or_ss,each_machine_name),
-					query=UPDATE_QUERY	,
-					#data="",
-					redis_key="aggregated_ul_issue_%s_%s_%s"%(each_machine_name,bs_or_ss,device_tech.get(bs_or_ss)),
-					redis_conn_id = "redis_hook_6",
-					mysql_conn_id='mysql_uat',
-					dag=ul_issue_kpi_subdag_dag,
-					queue = celery_queue,
-					trigger_rule = 'all_done'
-					)
-				if bs_or_ss == "ss":
-					update_data_in_mysql << aggregate_ul_issue_data_ss_task
-					insert_data_in_mysql << aggregate_ul_issue_data_ss_task
+				if not DEBUG_MODE:
+					insert_data_in_mysql = MySqlLoaderOperator(
+						task_id ="upload_%s_data_%s"%(bs_or_ss,each_machine_name),
+						dag=ul_issue_kpi_subdag_dag,
+						query=INSERT_QUERY,
+						#data="",
+						redis_key="aggregated_ul_issue_%s_%s_%s"%(each_machine_name,bs_or_ss,device_tech.get(bs_or_ss)),
+						redis_conn_id = "redis_hook_6",
+						mysql_conn_id='mysql_uat',
+						queue = celery_queue,
+						trigger_rule = 'all_done'
+						)
+					update_data_in_mysql = MySqlLoaderOperator(
+						task_id ="update_%s_data_%s"%(bs_or_ss,each_machine_name),
+						query=UPDATE_QUERY	,
+						#data="",
+						redis_key="aggregated_ul_issue_%s_%s_%s"%(each_machine_name,bs_or_ss,device_tech.get(bs_or_ss)),
+						redis_conn_id = "redis_hook_6",
+						mysql_conn_id='mysql_uat',
+						dag=ul_issue_kpi_subdag_dag,
+						queue = celery_queue,
+						trigger_rule = 'all_done'
+						)
+					if bs_or_ss == "ss":
+						update_data_in_mysql << aggregate_ul_issue_data_ss_task
+						insert_data_in_mysql << aggregate_ul_issue_data_ss_task
+					else:
+						update_data_in_mysql << aggregate_ul_issue_data_bs_task
+						insert_data_in_mysql << aggregate_ul_issue_data_bs_task
 				else:
-					update_data_in_mysql << aggregate_ul_issue_data_bs_task
-					insert_data_in_mysql << aggregate_ul_issue_data_bs_task
+					logging.info("Not inserting data Debug mode active")
 
 	for each_site_name in union_sites:
 		if each_site_name in config_sites:
@@ -587,8 +611,6 @@ child_dag_name,
 			logging.info("Skipping %s"%(each_site_name))
 
 
-	#print bs_calc_task_list 
-	#print ss_calc_task_list
 
 	for bs in bs_calc_task_list:
 		for ss in ss_calc_task_list:

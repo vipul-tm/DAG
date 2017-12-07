@@ -48,7 +48,11 @@ default_args = {
 	# 'end_date': datetime(2016, 1, 1),
 }
 redis_hook_util_10 = RedisHook(redis_conn_id="redis_hook_util_10")
-memc_con = MemcacheHook(memc_cnx_id = 'memc_cnx')
+memc_con_cluster = MemcacheHook(memc_cnx_id = 'memc_cnx')
+vrfprv_memc_con  = MemcacheHook(memc_cnx_id = 'vrfprv_memc_cnx')
+pub_memc_con  = MemcacheHook(memc_cnx_id = 'pub_memc_cnx')
+redis_hook_static_5 = RedisHook(redis_conn_id="redis_hook_5")
+
 INSERT_HEADER = "INSERT INTO %s.performance_utilization"
 INSERT_TAIL = """
 (machine_name,current_value,service_name,avg_value,max_value,age,min_value,site_name,data_source,critical_threshold,device_name,severity,sys_timestamp,ip_address,warning_threshold,check_timestamp,refer ) 
@@ -67,8 +71,10 @@ UPDATE_TAIL = """
 ERROR_DICT ={404:'Device not found yet',405:'No SS Connected to BS-BS is not skipped'}
 ERROR_FOR_DEVICE_OMITTED = [404]
 kpi_rules = eval(Variable.get("kpi_rules"))
+DEBUG = False
 sv_to_ds_mapping = {}
-
+O7_CALC_Q = "calculation_q"
+down_and_unresponsive_devices = eval(redis_hook_static_5.get("current_down_devices_all"))
 def process_utilization_kpi(
 parent_dag_name, 
 child_dag_name,
@@ -126,9 +132,8 @@ child_dag_name,
 				}
 
 		ss_data =redis_hook_util_10.rget("calculated_utilization_%s_%s"%(device_type,site_name))
-		cur_processing_time = backtrack_x_min(time.time(),300) # this is used to rewind the time to previous multiple of 5 value so that kpi can be shown accordingly
+		cur_processing_time = backtrack_x_min(time.time(),300) + 120 # this is used to rewind the time to previous multiple of 5 value so that kpi can be shown accordingly
 		ss_devices_list = []
-		pprint(sv_to_ds_mapping)
 		for ss_device in ss_data:
 			ss_device = eval(ss_device)
 			hostname = ss_device.get('hostname')
@@ -154,12 +159,17 @@ child_dag_name,
 				ss_kpi_dict['warning_threshold']= thresholds[1]
 				
 				if not isinstance(ss_device.get(service),dict):
+					#handling cur_value if it is greater than 100
+					cur_value=ss_device.get(service)
+					if cur_value > 100.00:
+						cur_value = 100
+
 					ss_kpi_dict['severity']= calculate_severity(service,ss_device.get(service))
 					ss_kpi_dict['age']= calculate_age(hostname,ss_kpi_dict['severity'],ss_device.get('device_type'),cur_processing_time,service)
-					ss_kpi_dict['current_value']=ss_device.get(service)
-					ss_kpi_dict['avg_value']=ss_kpi_dict['current_value']
-					ss_kpi_dict['min_value']=ss_kpi_dict['current_value']
-					ss_kpi_dict['max_value']=ss_kpi_dict['current_value']
+					ss_kpi_dict['current_value']=cur_value
+					ss_kpi_dict['avg_value']=cur_value
+					ss_kpi_dict['min_value']=cur_value
+					ss_kpi_dict['max_value']=cur_value
 
 					if ss_kpi_dict['current_value'] != None:
 						ss_devices_list.append(ss_kpi_dict.copy())
@@ -190,6 +200,14 @@ child_dag_name,
 		site_name = kwargs.get("params").get("site_name")
 		device_type = kwargs.get("params").get("technology")
 		utilization_attributes = kwargs.get("params").get("attributes")
+		if "vrfprv" in site_name:			
+			memc_con = vrfprv_memc_con
+				
+		elif "pub" in site_name:
+			memc_con = pub_memc_con
+		else:
+			memc_con = memc_con_cluster
+			
 		ss_data_dict = {}
 		all_ss_data = []
 		if site_name not in hostnames_ss_per_site.keys():
@@ -202,11 +220,11 @@ child_dag_name,
 			ss_data_dict['hostname'] = host_name
 			ss_data_dict['ipaddress'] = ip_address
 	
-			
-			for service in utilization_attributes:			
-				ss_data_dict[service.get('service_name')] = memc_con.get(service.get('utilization_key')%(host_name))
-			
-			all_ss_data.append(ss_data_dict.copy())
+			if host_name not in down_and_unresponsive_devices:
+				for service in utilization_attributes:			
+					ss_data_dict[service.get('service_name')] = memc_con.get(service.get('utilization_key')%(host_name))
+				
+				all_ss_data.append(ss_data_dict.copy())
 
 		if len(all_ss_data) == 0:
 			logging.info("No data Fetched ! Aborting Successfully")
@@ -257,9 +275,14 @@ child_dag_name,
 					capacity = None
 					if "capacity" in service_attributes.keys():
 						capacity =  service_attributes.get("capacity")
-
-					devices[service] = eval(kpi_rules.get(service).get('formula'))
-									
+					try:
+						formula = kpi_rules.get(service).get('formula')
+						
+						devices[service] = eval(formula)
+						
+					except Exception:
+						print "Exception in calculating data"
+						pass			
 				else:
 					continue
 
@@ -309,7 +332,8 @@ child_dag_name,
 				python_callable=aggregate_utilization_data,
 				params={"machine_name":each_machine_name,"technology":ss_name},
 				dag=utilization_kpi_subdag_dag,
-				queue = celery_queue
+				queue = O7_CALC_Q,
+				trigger_rule = 'all_done'
 				)
 			aggregate_dependency_ss[each_machine_name] = aggregate_utilization_data_ss_task
 
@@ -323,31 +347,32 @@ child_dag_name,
 			UPDATE_QUERY = UPDATE_QUERY.replace('\n','')
 
 			#ss_name == Device_type
-			insert_data_in_mysql = MySqlLoaderOperator(
-				task_id ="upload_data_%s"%(each_machine_name),
-				dag=utilization_kpi_subdag_dag,
-				query=INSERT_QUERY,
-				#data="",
-				redis_key="aggregated_utilization_%s_%s"%(each_machine_name,ss_name),
-				redis_conn_id = "redis_hook_util_10",
-				mysql_conn_id='mysql_uat',
-				queue = celery_queue,
-				trigger_rule = 'all_done'
-				)
-			update_data_in_mysql = MySqlLoaderOperator(
-				task_id ="update_data_%s"%(each_machine_name),
-				query=UPDATE_QUERY	,
-				#data="",
-				redis_key="aggregated_utilization_%s_%s"%(each_machine_name,ss_name),
-				redis_conn_id = "redis_hook_util_10",
-				mysql_conn_id='mysql_uat',
-				dag=utilization_kpi_subdag_dag,
-				queue = celery_queue,
-				trigger_rule = 'all_done'
-				)
-		
-			update_data_in_mysql << aggregate_utilization_data_ss_task
-			insert_data_in_mysql << aggregate_utilization_data_ss_task
+			if not DEBUG:
+				insert_data_in_mysql = MySqlLoaderOperator(
+					task_id ="upload_data_%s"%(each_machine_name),
+					dag=utilization_kpi_subdag_dag,
+					query=INSERT_QUERY,
+					#data="",
+					redis_key="aggregated_utilization_%s_%s"%(each_machine_name,ss_name),
+					redis_conn_id = "redis_hook_util_10",
+					mysql_conn_id='mysql_uat',
+					queue = O7_CALC_Q,
+					trigger_rule = 'all_done'
+					)
+				update_data_in_mysql = MySqlLoaderOperator(
+					task_id ="update_data_%s"%(each_machine_name),
+					query=UPDATE_QUERY	,
+					#data="",
+					redis_key="aggregated_utilization_%s_%s"%(each_machine_name,ss_name),
+					redis_conn_id = "redis_hook_util_10",
+					mysql_conn_id='mysql_uat',
+					dag=utilization_kpi_subdag_dag,
+					queue = O7_CALC_Q,
+					trigger_rule = 'all_done'
+					)
+			
+				update_data_in_mysql << aggregate_utilization_data_ss_task
+				insert_data_in_mysql << aggregate_utilization_data_ss_task
 
 
 	for each_site_name in ss_tech_sites:
@@ -370,7 +395,7 @@ child_dag_name,
 				python_callable=calculate_utilization_data_ss,
 				params={"site_name":each_site_name,"technology":ss_name,'attributes':utilization_attributes},
 				dag=utilization_kpi_subdag_dag,
-				queue = celery_queue,
+				queue = O7_CALC_Q,
 				
 				)
 

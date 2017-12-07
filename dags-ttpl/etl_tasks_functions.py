@@ -3,7 +3,6 @@ from airflow.operators import MySqlOperator
 from airflow.hooks.mysql_hook import MySqlHook
 from airflow.hooks import RedisHook
 from airflow.hooks import  MemcacheHook
-from airflow.hooks import KafkaHook
 import socket
 import logging
 import csv #for debugging task
@@ -15,7 +14,6 @@ redis_hook_4 = RedisHook(redis_conn_id="redis_hook_4")
 #redis_hook_5 = RedisHook(redis_conn_id="redis_hook_5")
 memc_con = MemcacheHook(memc_cnx_id = 'memc_cnx')
 databases = eval(Variable.get('databases'))
-kafka_hook =KafkaHook(kafka_conn_id = 'kafka_default')
 #############################################HELPERS################################################
 
 

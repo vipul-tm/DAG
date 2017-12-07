@@ -41,7 +41,7 @@ def calculate_wimax_ss_ul_issue(wimax_dl_intrf,wimax_ul_intrf):
 			ul_issue = 0
 			state_string = "ok"
 		else:
-			ul_issue = 405
+			ul_issue = 0
 			state_string = "unknown"
 		return ul_issue
 	else:
@@ -73,6 +73,7 @@ def calculate_cambium_ss_ul_issue(cambium_ul_jitter,cambium_rereg_count):
 			ul_issue = 1
 		else:
 			state_string = "ok"
+
 			ul_issue = 0	
 
 		return ul_issue
@@ -99,6 +100,26 @@ def calculate_radwin5k_ss_ul_issue(rad5k_ss_dl_uas,rad5k_ss_ul_modulation):
 		traceback.print_exc()
 		return '405'
 
+def calculate_radwin5kjet_ss_ul_issue(rad5kjet_ss_dl_uas,rad5kjet_ss_ul_modulation):
+	try:
+		ul_issue=0
+		if rad5kjet_ss_dl_uas and rad5kjet_ss_ul_modulation:
+			if len(rad5kjet_ss_dl_uas) == 2:
+				if len([i for i in rad5kjet_ss_dl_uas if int(i) >0])==2 :
+					ul_issue = 1
+				if len(rad5kjet_ss_ul_modulation) == 2:
+					if len([i for i in rad5kjet_ss_ul_modulation if i == 'BPSK-FEC-1/2'])==2 :
+						ul_issue = 1
+		
+			return ul_issue
+		else:
+			print("No Services Found")
+			return 0
+	except Exception as e :
+		logging.error("Error in rad5k ul issue")
+		traceback.print_exc()
+		return '405'
+
 
 # age_of_state = age_since_last_state(host_name, args['service'], state_string)
 # service_dict = service_dict_for_kpi_services(
@@ -112,11 +133,13 @@ def calculate_radwin5k_ss_ul_issue(rad5k_ss_dl_uas,rad5k_ss_ul_modulation):
 
 
 def calculate_wimax_bs_ul_issue(ss_data,bs,bs_services,ss_services):
+
 	#serv_name = bs.get(service) #this is sec_id as written in variable ul_issue_services_mapping
-	bs_ul_issue_dict = {'pmp1':405,'pmp2':405}
-	bs_ul_issue = 0
+	bs_ul_issue_dict = {'pmp1':0,'pmp2':0}
+	
 	if bs.get("connectedss") and bs.get("connectedss") != None:
 		for pmp_port in range(1,len(bs_services)+1):
+			bs_ul_issue = 0 #this is to reset the ul issue for the next port
 			if len(bs.get("connectedss").get(pmp_port)) > 0:
 				try:
 					
@@ -130,6 +153,7 @@ def calculate_wimax_bs_ul_issue(ss_data,bs,bs_services,ss_services):
 					try:
 						
 						if ss_data.get(ss):
+							
 							ss_processed_data = ss_data.get(ss)
 							for ss_service in ss_services:
 								if ss_processed_data.get(ss_service):
@@ -139,26 +163,28 @@ def calculate_wimax_bs_ul_issue(ss_data,bs,bs_services,ss_services):
 
 									
 						else:
-							print "Didnt find the connected SS in the bucket yet"
+							#print "Didnt find the connected SS in the bucket yet"
 							bs_ul_issue = bs_ul_issue + 0
 							redis_hook_6.rpush('lost_ss_queue',bs)
-							return 404
+							
 							#here SS is not found possible it's onto some other site due to asshole support people lets create a bucket for them
 
 					except Exception:
 						# SAME SHIT HERE too
 						print "EXCEPTI0N"
 						bs_ul_issue = bs_ul_issue + 0
-						
-				if bs_ul_issue > 100:
-					bs_ul_issue = 100
-				bs_ul_issue_dict['pmp%s'%(pmp_port)] = float((bs_ul_issue/float(total_ss_len))*100)
+				
+				bs_ul_issue_percent = float((bs_ul_issue/float(total_ss_len))*100)
+				if bs_ul_issue_percent > 100:
+					bs_ul_issue_percent = 100
+					
+				bs_ul_issue_dict['pmp%s'%(pmp_port)] = round(bs_ul_issue_percent,2)
 				
 			else:
-				print "No SS Connected "
+				#print "No SS Connected "
 				bs_ul_issue_dict['pmp%s'%(pmp_port)] = 405
 
-
+		
 
 		return bs_ul_issue_dict
 
@@ -168,7 +194,7 @@ def calculate_wimax_bs_ul_issue(ss_data,bs,bs_services,ss_services):
 
 def calculate_cambium_bs_ul_issue(ss_data,bs,bs_services,ss_services):
 	#serv_name = bs.get(service) #this is sec_id as written in variable ul_issue_services_mapping
-	bs_ul_issue_dict = {'pmp1':405}
+	bs_ul_issue_dict = {'pmp1':0}
 	bs_ul_issue = 0
 	if bs.get("connectedss") and bs.get("connectedss") != None:
 	
@@ -190,28 +216,30 @@ def calculate_cambium_bs_ul_issue(ss_data,bs,bs_services,ss_services):
 							if ss_processed_data.get(ss_service):
 								if ss_processed_data.get(ss_service) == 1:
 									bs_ul_issue = bs_ul_issue+1
-									print "/////////////////////////////////////////////////%s,%s"%(bs_ul_issue,bs.get('ipaddress'))
+									
 
 								
 					else:
-						print "Didnt find the connected SS in the bucket yet"
+						#print "Didnt find the connected SS in the bucket yet"
 						bs_ul_issue = bs_ul_issue + 0
 						redis_hook_6.rpush('lost_ss_queue',bs)
-						return 404
+						
 						#here SS is not found possible it's onto some other site due to asshole support people lets create a bucket for them
 
 				except Exception:
 					# SAME SHIT HERE too
-					print "EXCEPTI0N"
+					#print "EXCEPTI0N"
 					bs_ul_issue = bs_ul_issue + 0
-					
-			if bs_ul_issue > 100:
-				bs_ul_issue = 100
+				
+			bs_ul_issue_percent = float((bs_ul_issue/float(total_ss_len))*100)
 
-			bs_ul_issue_dict['pmp1'] = float((bs_ul_issue/float(total_ss_len))*100)
+			if bs_ul_issue_percent > 100:
+				bs_ul_issue_percent = 100
+
+			bs_ul_issue_dict['pmp1'] = round(bs_ul_issue_percent,2)
 			
 		else:
-			print "No SS Connected "
+			#print "No SS Connected "
 			bs_ul_issue_dict['pmp1'] = 405
 
 
@@ -227,7 +255,7 @@ def calculate_cambium_bs_ul_issue(ss_data,bs,bs_services,ss_services):
 #Its exactly same as cambium will change it soon to collabrate in one
 def calculate_radwin5k_bs_ul_issue(ss_data,bs,bs_services,ss_services):
 	#serv_name = bs.get(service) #this is sec_id as written in variable ul_issue_services_mapping
-	bs_ul_issue_dict = {'pmp1':405}
+	bs_ul_issue_dict = {'pmp1':0}
 	bs_ul_issue = 0
 	if bs.get("connectedss") and bs.get("connectedss") != None:
 	
@@ -249,14 +277,14 @@ def calculate_radwin5k_bs_ul_issue(ss_data,bs,bs_services,ss_services):
 							if ss_processed_data.get(ss_service):
 								if ss_processed_data.get(ss_service) == 1:
 									bs_ul_issue = bs_ul_issue+1
-									print "/////////////////////////////////////////////////%s,%s"%(bs_ul_issue,bs.get('ipaddress'))
+									
 
 								
 					else:
-						print "Didnt find the connected SS in the bucket yet"
+						#print "Didnt find the connected SS in the bucket yet"
 						bs_ul_issue = bs_ul_issue + 0
 						redis_hook_6.rpush('lost_ss_queue',bs)
-						return 404
+						
 						#here SS is not found possible it's onto some other site due to asshole support people lets create a bucket for them
 
 				except Exception:
@@ -264,13 +292,70 @@ def calculate_radwin5k_bs_ul_issue(ss_data,bs,bs_services,ss_services):
 					print "EXCEPTI0N"
 					bs_ul_issue = bs_ul_issue + 0
 					
-			if bs_ul_issue > 100:
-				bs_ul_issue = 100
+			bs_ul_issue_percent = float((bs_ul_issue/float(total_ss_len))*100)
+			if bs_ul_issue_percent > 100:
+				bs_ul_issue_percent = 100
 
-			bs_ul_issue_dict['pmp1'] = float((bs_ul_issue/float(total_ss_len))*100)
+			bs_ul_issue_dict['pmp1'] = round(bs_ul_issue_percent,2)
 			
 		else:
-			print "No SS Connected "
+			#print "No SS Connected "
+			bs_ul_issue_dict['pmp1'] = 405
+
+
+
+		return bs_ul_issue_dict
+
+	else:
+		return bs_ul_issue_dict
+#this is exactly same as Rad5k and cambium but only diffrence inn function name :P 
+def calculate_radwin5kjet_bs_ul_issue(ss_data,bs,bs_services,ss_services):
+	#serv_name = bs.get(service) #this is sec_id as written in variable ul_issue_services_mapping
+	bs_ul_issue_dict = {'pmp1':0}
+	bs_ul_issue = 0
+	if bs.get("connectedss") and bs.get("connectedss") != None:
+	
+		if len(bs.get("connectedss") )> 0:
+			try:
+				
+				connected_ss = bs.get("connectedss")
+				total_ss_len = len(connected_ss)
+				
+			except AttributeError:
+				print "EXCEPTION %s"%(bs)
+				
+			for ss in connected_ss:
+				try:
+					
+					if ss_data.get(ss):
+						ss_processed_data = ss_data.get(ss)
+						for ss_service in ss_services:
+							if ss_processed_data.get(ss_service):
+								if ss_processed_data.get(ss_service) == 1:
+									bs_ul_issue = bs_ul_issue+1
+									
+
+								
+					else:
+						#print "Didnt find the connected SS in the bucket yet"
+						bs_ul_issue = bs_ul_issue + 0
+						redis_hook_6.rpush('lost_ss_queue',bs)
+						
+						#here SS is not found possible it's onto some other site due to asshole support people lets create a bucket for them
+
+				except Exception:
+					# SAME SHIT HERE too
+					print "EXCEPTI0N"
+					bs_ul_issue = bs_ul_issue + 0
+					
+			bs_ul_issue_percent = float((bs_ul_issue/float(total_ss_len))*100)
+			if bs_ul_issue_percent > 100:
+				bs_ul_issue_percent = 100
+
+			bs_ul_issue_dict['pmp1'] = round(bs_ul_issue_percent,2)
+			
+		else:
+			#print "No SS Connected "
 			bs_ul_issue_dict['pmp1'] = 405
 
 
@@ -461,4 +546,8 @@ def calculate_age(hostname,current_severity,device_type,current_time):
 
 def backtrack_x_min(x,seconds):
 	value= int(math.floor(x / seconds)) * seconds
+	return value
+
+def forward_x_min(x,seconds):
+	value= int(math.ceil(x / seconds)) * seconds
 	return value

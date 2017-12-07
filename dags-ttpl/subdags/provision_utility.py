@@ -28,7 +28,7 @@ for techs_bs in ul_tech:
 
 #############################################SS UL ISSUE###############################################################################################
 def calculate_wimax_ss_provision(wimax_ul_rssi,wimax_dl_rssi,wimax_dl_cinr,wimax_ss_ptx_invent):
-	ss_state = ""
+	ss_state = "normal"
 	try:
 		if (wimax_ul_rssi !=None and wimax_dl_rssi !=None and wimax_ss_ptx_invent != None and (int(wimax_ul_rssi) < -83 or \
 			int(wimax_dl_rssi) < -83 and int(wimax_ss_ptx_invent) > 20)):
@@ -58,7 +58,7 @@ def calculate_wimax_ss_provision(wimax_ul_rssi,wimax_dl_rssi,wimax_dl_cinr,wimax
 
 
 def calculate_cambium_ss_provision(cambium_ul_rssi,cambium_dl_rssi,cambium_dl_jitter,cambium_ul_jitter,cambium_rereg_count):
-	ss_state = ""
+	ss_state = "normal"
 	try:
 		if cambium_ul_rssi != None and cambium_dl_rssi != None and (int(cambium_ul_rssi) < -82 or int(cambium_dl_rssi) < -82):
 			ss_state = "los"
@@ -83,7 +83,7 @@ def calculate_cambium_ss_provision(cambium_ul_rssi,cambium_dl_rssi,cambium_dl_ji
 		return ss_state
 
 def calculate_radwin5k_ss_provision(radwin_rssi,radwin_uas):
-	ss_state = "unknown" 
+	ss_state = "normal" 
 	try:
 		if radwin_rssi != None and int(radwin_rssi) < -80:
 			ss_state = "los"

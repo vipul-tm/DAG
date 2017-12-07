@@ -34,7 +34,8 @@ config = eval(Variable.get('system_config'))
 redis_hook_5 = RedisHook(redis_conn_id="redis_hook_2")
 
 memc_con = MemcacheHook(memc_cnx_id = 'memc_cnx')
-
+vrfprv_memc_con  = MemcacheHook(memc_cnx_id = 'vrfprv_memc_cnx')
+pub_memc_con  = MemcacheHook(memc_cnx_id = 'pub_memc_cnx')
 def create_prev_state(**kwargs):
     
     
@@ -129,8 +130,8 @@ def create_prev_state(**kwargs):
     rta = "all_devices_state_rta"
     down_key = "all_devices_down_state"
 
-    #redis_hook_5.set(main_redis_key,str(machine_state_list_pl))
-    #redis_hook_5.set(rta,str(machine_state_list_rta))
+    redis_hook_5.set(main_redis_key,str(machine_state_list_pl))
+    redis_hook_5.set(rta,str(machine_state_list_rta))
     redis_hook_5.set(down_key,str(machine_state_list_down))
     logging.info("3 keys generated in redis")
 def get_ip_host_mapping():
@@ -173,7 +174,7 @@ def create_ul_issue_kpi_prev_state():
     all_device_type = services_mapping.keys()
     for device_type in services_mapping:
         all_services.extend(services_mapping.get(device_type))
-        new_prev_states_dict["kpi_ul_prev_state_%s"%(device_type)] = []
+        new_prev_states_dict["kpi_ul_prev_state_%s"%(device_type)] = {}
 
     none_count =0
     for device in all_devices:
@@ -188,11 +189,17 @@ def create_ul_issue_kpi_prev_state():
             
             try:
                 old_states =memc_con.get(kpi_key)
+                if old_states == None:
+                    old_states = vrfprv_memc_con.get(kpi_key)
+                if old_states == None:
+                    old_states = pub_memc_con.get(kpi_key)
+
+
                 if old_states != None:
                     old_severity = old_states.split(",")[0]
                     old_severity_since = old_states.split(",")[1]
                     device_dict[hostname]= {'state':old_severity,'since':old_severity_since}
-                    new_prev_states_dict.get("kpi_ul_prev_state_%s"%(device_type)).append(device_dict.copy())
+                    new_prev_states_dict.get("kpi_ul_prev_state_%s"%(device_type))[hostname] = {'state':old_severity,'since':old_severity_since}
                 else:
                     #print "None for %s %s"%(kpi_key,old_states)
                     none_count = none_count+1
@@ -226,7 +233,7 @@ def create_provis_kpi_prev_state():
     all_device_type = services_mapping.keys()
     for device_type in services_mapping:
         all_services.extend(services_mapping.get(device_type))
-        new_prev_states_dict["kpi_provis_prev_state_%s"%(device_type)] = []
+        new_prev_states_dict["kpi_provis_prev_state_%s"%(device_type)] = {}
 
     none_count =0
     for device in all_devices:
@@ -241,11 +248,16 @@ def create_provis_kpi_prev_state():
             
             try:
                 old_states =memc_con.get(kpi_key)
+                if old_states == None:
+                    old_states = vrfprv_memc_con.get(kpi_key)
+                if old_states == None:
+                    old_states = pub_memc_con.get(kpi_key)
+
                 if old_states != None:
                     old_severity = old_states.split(",")[0]
                     old_severity_since = old_states.split(",")[1]
                     device_dict[hostname]= {'state':old_severity,'since':old_severity_since}
-                    new_prev_states_dict.get("kpi_provis_prev_state_%s"%(device_type)).append(device_dict.copy())
+                    new_prev_states_dict.get("kpi_provis_prev_state_%s"%(device_type))[hostname]={'state':old_severity,'since':old_severity_since}
                 else:
                     #print "None for %s %s"%(kpi_key,old_states)
                     none_count = none_count+1
@@ -268,6 +280,65 @@ def create_provis_kpi_prev_state():
         except Exception:
             logging.error("Unable to add %s key in redis"%(key))
 
+def create_utilization_kpi_prev_state():
+
+    all_devices = eval(Variable.get("hostmk.dict"))
+    services_mapping = eval(Variable.get("utilization_kpi_service_mapping"))
+    #services_mapping = eval(Variable.get("back_util"))
+    all_services = []
+    new_prev_states_dict = {}
+    all_device_type = services_mapping.keys()
+    for device_type in services_mapping:
+        all_services.extend(services_mapping.get(device_type))
+        new_prev_states_dict["kpi_util_prev_state_%s"%(device_type)] = {}
+
+    none_count =0
+    for device in all_devices:
+        hostname = device
+        device_type = all_devices.get(device)
+        device_dict={}
+
+        if device_type in all_device_type:
+            device_dict[hostname]  = {'state':'unknown','since':'unknown'}
+            services = services_mapping.get(device_type)
+            for service in services:
+                kpi_key = "util:%s:%s"%(hostname,service)
+                prev_dict_key = "%s_%s"%(hostname,service)
+                try:
+                    old_states =memc_con.get(kpi_key)
+                    
+                    if old_states == None:
+                        old_states = vrfprv_memc_con.get(kpi_key)
+                    if old_states == None:
+                        old_states = pub_memc_con.get(kpi_key)
+
+                    if old_states != None:
+                        old_severity = old_states.split(",")[0]
+                        old_severity_since = old_states.split(",")[1]
+                        device_dict[hostname]= {'state':old_severity,'since':old_severity_since}
+
+                        new_prev_states_dict.get("kpi_util_prev_state_%s"%(device_type))[prev_dict_key]={'state':old_severity,'since':old_severity_since}
+                    else:
+                        #print "None for %s %s"%(kpi_key,old_states)
+                        none_count = none_count+1
+                except Exception,e:
+                    print "Unable to get UTIL for %s - %s"%(device_type,e)
+                    break
+
+    print len(new_prev_states_dict),new_prev_states_dict.keys()
+    count_total = 0
+    for d in new_prev_states_dict:
+        print len(new_prev_states_dict.get(d))
+        count_total = count_total + len(new_prev_states_dict.get(d))
+
+    print "None in Memc for %s Devices Total States Found %s"%(none_count,count_total)
+
+    for key in new_prev_states_dict.keys():
+        try:
+            redis_hook_5.set(key,str(new_prev_states_dict.get(key)))
+            logging.info("Setting for Key %s is successful"%(key))
+        except Exception:
+            logging.error("Unable to add %s key in redis"%(key))
 
 
 
@@ -291,5 +362,11 @@ get_provis_kpi_prev_states_task= PythonOperator(
     task_id="create_provision_kpi_prev_state",
     provide_context=False,
     python_callable=create_provis_kpi_prev_state,
+    dag=prev_state_dag
+    )
+get_utilization_kpi_prev_states_task= PythonOperator(
+    task_id="create_utilization_kpi_prev_state",
+    provide_context=False,
+    python_callable=create_utilization_kpi_prev_state,
     dag=prev_state_dag
     )

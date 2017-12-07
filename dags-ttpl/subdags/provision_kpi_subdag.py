@@ -39,7 +39,9 @@ default_args = {
 	# 'end_date': datetime(2016, 1, 1),
 }
 redis_hook_7 = RedisHook(redis_conn_id="redis_hook_7")
-memc_con = MemcacheHook(memc_cnx_id = 'memc_cnx')
+memc_con_cluster = MemcacheHook(memc_cnx_id = 'memc_cnx')
+vrfprv_memc_con  = MemcacheHook(memc_cnx_id = 'vrfprv_memc_cnx')
+pub_memc_con  = MemcacheHook(memc_cnx_id = 'pub_memc_cnx')
 INSERT_HEADER = "INSERT INTO %s.performance_utilization"
 INSERT_TAIL = """
 (machine_name,current_value,service_name,avg_value,max_value,age,min_value,site_name,data_source,critical_threshold,device_name,severity,sys_timestamp,ip_address,warning_threshold,check_timestamp,refer ) 
@@ -60,6 +62,7 @@ ERROR_FOR_DEVICE_OMITTED = [404]
 provision_service_mapping = eval(Variable.get("provision_services_mapping"))
 kpi_rules = eval(Variable.get("kpi_rules"))
 device_to_service_mapper = eval(Variable.get("provision_kpi_to_formula_mapping"))
+DEBUG_MODE = False
 def process_provision_kpi(
 parent_dag_name, 
 child_dag_name,
@@ -112,7 +115,7 @@ child_dag_name,
 				}
 
 		ss_data =redis_hook_7.rget("calculated_ss_provision_%s_%s"%(device_type,site_name))
-		cur_processing_time = backtrack_x_min(time.time(),300) # this is used to rewind the time to previous multiple of 5 value so that kpi can be shown accordingly
+		cur_processing_time = backtrack_x_min(time.time(),300)+120 # this is used to rewind the time to previous multiple of 5  and added 2 mins value so that kpi can be shown accordingly
 		ss_devices_list = []
 		for ss_device in ss_data:
 			ss_device = eval(ss_device)
@@ -124,16 +127,16 @@ child_dag_name,
 				ss_kpi_dict['critical_threshold']=thresholds[0]
 				ss_kpi_dict['data_source']=data_source
 				ss_kpi_dict['site_name']=ss_device.get('site')
-				ss_kpi_dict['severity']= 'ok' if ss_device.get(service) == 0 or ss_device.get(service) == 1 else 'unknown'  #TODO: ok and unknown are only 2 sev for ss we can incluudethis in rules later 
-				ss_kpi_dict['avg_value']=0
+				ss_kpi_dict['severity']= 'ok'  #TODO: ok and unknown are only 2 sev for ss we can incluudethis in rules later 
+				ss_kpi_dict['avg_value']=ss_device.get(service)
 				ss_kpi_dict['service_name']= service
 				ss_kpi_dict['age']= calculate_age(hostname,ss_kpi_dict['severity'],ss_device.get('device_type'),cur_processing_time)
-				ss_kpi_dict['min_value']= 0
+				ss_kpi_dict['min_value']= ss_device.get(service)
 				ss_kpi_dict['machine_name']= machine_name
 				ss_kpi_dict['check_timestamp']=cur_processing_time
 				ss_kpi_dict['device_name']=ss_device.get('hostname')
 				ss_kpi_dict['sys_timestamp']=cur_processing_time
-				ss_kpi_dict['max_value']=0
+				ss_kpi_dict['max_value']=ss_device.get(service)
 				ss_kpi_dict['current_value']=ss_device.get(service)
 				ss_kpi_dict['refer']=''
 				ss_kpi_dict['ip_address']=ss_device.get('ipaddress')
@@ -162,6 +165,15 @@ child_dag_name,
 		# except Exception:
 		# 	logging.info("No data found for %s"%(site_name))
 		# print "+++++++++++++++++++++++++"
+		if "vrfprv" in site_name:			
+			memc_con = vrfprv_memc_con
+				
+		elif "pub" in site_name:
+			memc_con = pub_memc_con
+		else:
+			memc_con = memc_con_cluster
+
+
 		if site_name not in hostnames_ss_per_site.keys():
 			logging.warning("No SS devices found for %s"%(site_name))
 			return 1
@@ -171,9 +183,10 @@ child_dag_name,
 			ip_address = hostnames_dict.get("ip_address")
 			ss_data_dict['hostname'] = host_name
 			ss_data_dict['ipaddress'] = ip_address
-	
 			
-			for service in provision_service_mapping.get(ss_name):			
+			
+			for service in provision_service_mapping.get(ss_name):
+				
 				ss_data_dict[service] = memc_con.get("provis:%s:%s"%(host_name,service))
 			
 			all_ss_data.append(ss_data_dict.copy())
@@ -207,6 +220,7 @@ child_dag_name,
 			devices = eval(devices)
 			devices['site'] = site_name
 			devices['device_type'] = device_type
+			
 
 			for service in services: #loop for the all the configured services
 
@@ -229,7 +243,7 @@ child_dag_name,
 		#redis_hook_7.rpush("calculated_ss_provision_kpi",ss_provision_list)
 
 	def aggregate_provision_data(*args,**kwargs):
-		print "Aggregating Data"
+		
 		machine_name = kwargs.get("params").get("machine_name")
 		device_type = kwargs.get("params").get("technology")
 		
@@ -281,32 +295,34 @@ child_dag_name,
 			UPDATE_QUERY = UPDATE_QUERY.replace('\n','')
 
 			#ss_name == Device_type
-			insert_data_in_mysql = MySqlLoaderOperator(
-				task_id ="upload_data_%s"%(each_machine_name),
-				dag=provision_kpi_subdag_dag,
-				query=INSERT_QUERY,
-				#data="",
-				redis_key="aggregated_provision_%s_%s"%(each_machine_name,ss_name),
-				redis_conn_id = "redis_hook_7",
-				mysql_conn_id='mysql_uat',
-				queue = celery_queue,
-				trigger_rule = 'all_done'
-				)
-			update_data_in_mysql = MySqlLoaderOperator(
-				task_id ="update_data_%s"%(each_machine_name),
-				query=UPDATE_QUERY	,
-				#data="",
-				redis_key="aggregated_provision_%s_%s"%(each_machine_name,ss_name),
-				redis_conn_id = "redis_hook_7",
-				mysql_conn_id='mysql_uat',
-				dag=provision_kpi_subdag_dag,
-				queue = celery_queue,
-				trigger_rule = 'all_done'
-				)
-		
-			update_data_in_mysql << aggregate_provision_data_ss_task
-			insert_data_in_mysql << aggregate_provision_data_ss_task
-
+			if not DEBUG_MODE:
+				insert_data_in_mysql = MySqlLoaderOperator(
+					task_id ="upload_data_%s"%(each_machine_name),
+					dag=provision_kpi_subdag_dag,
+					query=INSERT_QUERY,
+					#data="",
+					redis_key="aggregated_provision_%s_%s"%(each_machine_name,ss_name),
+					redis_conn_id = "redis_hook_7",
+					mysql_conn_id='mysql_uat',
+					queue = celery_queue,
+					trigger_rule = 'all_done'
+					)
+				update_data_in_mysql = MySqlLoaderOperator(
+					task_id ="update_data_%s"%(each_machine_name),
+					query=UPDATE_QUERY	,
+					#data="",
+					redis_key="aggregated_provision_%s_%s"%(each_machine_name,ss_name),
+					redis_conn_id = "redis_hook_7",
+					mysql_conn_id='mysql_uat',
+					dag=provision_kpi_subdag_dag,
+					queue = celery_queue,
+					trigger_rule = 'all_done'
+					)
+			
+				update_data_in_mysql << aggregate_provision_data_ss_task
+				insert_data_in_mysql << aggregate_provision_data_ss_task
+			else:
+				logging.info("Not inserting data Debug mode active")
 
 	for each_site_name in ss_tech_sites:
 		if each_site_name in config_sites:
@@ -367,8 +383,6 @@ child_dag_name,
 			logging.info("Skipping %s"%(each_site_name))
 
 
-	#print bs_calc_task_list 
-	#print ss_calc_task_list
 
 	
 	return provision_kpi_subdag_dag

@@ -50,7 +50,7 @@ redis_hook_2 = RedisHook(redis_conn_id="redis_hook_2")
 
 
 technologies = eval(Variable.get('utilization_kpi_technologies'))
-machines = eval(Variable.get("system_config"))
+machines = eval(Variable.get("system_config_o1"))
 devices = eval(Variable.get('hostmk.dict.site_mapping'))
 attributes = eval(Variable.get('utilization_kpi_attributes'))
 

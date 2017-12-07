@@ -43,11 +43,14 @@ Q_OSPF = "poller_queue"
 Q_PING = "poller_queue"
 
 PARENT_DAG_NAME = "PROVISION_KPI"
+
+#3-59/5 * * * *
+# 3,8,13,18,23,28,33,38,43,48,53,58 * * * *
 provision_kpi_dag=DAG(dag_id=PARENT_DAG_NAME, default_args=default_args, schedule_interval='*/5 * * * *')
 redis_hook_7 = RedisHook(redis_conn_id="redis_hook_7")
 redis_hook_2 = RedisHook(redis_conn_id="redis_hook_2")
 technologies = eval(Variable.get('provision_kpi_technologies'))
-machines = eval(Variable.get("system_config"))
+machines = eval(Variable.get("system_config_o1"))
 devices = eval(Variable.get('hostmk.dict.site_mapping'))
 all_sites=[]
 def init_kpi():

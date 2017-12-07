@@ -13,11 +13,11 @@ from subdags.events import calculate_events
 
 from etl_tasks_functions import init_etl
 from etl_tasks_functions import debug_etl
-from etl_tasks_functions import send_data_to_kafka
+
 from airflow.operators import ExternalTaskSensor
 from airflow.operators import MemcToMySqlOperator
 from celery.signals import task_prerun, task_postrun
-from airflow.operators.kafka_extractor_operator import KafkaExtractorOperator
+
 
 #TODO: Commenting Optimize
 #######################################DAG CONFIG####################################################################################################################
@@ -160,7 +160,6 @@ for db in databases:
 
     query_nw_update = "INSERT INTO %s.performance_networkstatus "%database_name
     query_nw_update +="(machine_name,current_value,service_name,avg_value,max_value,age,min_value,site_name,data_source,critical_threshold,device_name,severity,sys_timestamp,ip_address,warning_threshold,check_timestamp,refer ) values (%(machine_name)s,%(current_value)s,%(service_name)s,%(avg_value)s,%(max_value)s,%(age)s,%(min_value)s,%(site_name)s,%(data_source)s,%(critical_threshold)s,%(device_name)s,%(severity)s,%(sys_timestamp)s,%(ip_address)s,%(warning_threshold)s,%(check_timestamp)s,%(refer)s) ON DUPLICATE KEY UPDATE machine_name = VALUES(machine_name),current_value = VALUES(current_value),age=VALUES(age),site_name=VALUES(site_name),critical_threshold=VALUES(critical_threshold),severity=VALUES(severity),sys_timestamp=VALUES(sys_timestamp),ip_address=VALUES(ip_address),warning_threshold=VALUES(warning_threshold),check_timestamp=VALUES(check_timestamp),refer=VALUES(refer)"  
-
 
     query_sv = "INSERT INTO %s.performance_performanceservice "%database_name
     query_sv +="(machine_name,current_value,service_name,avg_value,max_value,age,min_value,site_name,data_source,critical_threshold,device_name,severity,sys_timestamp,ip_address,warning_threshold,check_timestamp,refer ) values (%(machine_name)s,%(current_value)s,%(service_name)s,%(avg_value)s,%(max_value)s,%(age)s,%(min_value)s,%(site_name)s,%(data_source)s,%(critical_threshold)s,%(device_name)s,%(severity)s,%(sys_timestamp)s,%(ip_address)s,%(warning_threshold)s,%(check_timestamp)s,%(refer)s)"  

@@ -58,8 +58,9 @@ class RedisHook(BaseHook):
 	#to get setted redis key
 	def get(self,key):
 		conn = self.get_conn()
-		return conn.get(key)
 		conn.connection_pool.disconnect()
+		return conn.get(key)
+		
 	#to push list into redis
 	def rpush(self,key,value):
 		conn = self.get_conn()
@@ -68,8 +69,9 @@ class RedisHook(BaseHook):
 	#to pull all list from redis
 	def rget(self,key):
 		conn = self.get_conn()
-		return conn.lrange(key, 0, -1)
 		conn.connection_pool.disconnect()
+		return conn.lrange(key, 0, -1)
+		
 	#to delete all matching keys
 	def flushall(self,key):
 		conn = self.get_conn()
@@ -80,13 +82,15 @@ class RedisHook(BaseHook):
 
 	def get_keys(self,key):
 	   conn = self.get_conn()
-	   return conn.scan_iter(key)
 	   conn.connection_pool.disconnect()
+	   return conn.scan_iter(key)
+	   
 
 	def hgetall(self,key):
 	   conn = self.get_conn()
-	   return conn.hgetall(key)
 	   conn.connection_pool.disconnect()
+	   return conn.hgetall(key)
+	   
 
 	def add_event_by_key(conn, identifier, events, index_keys={"search_key":"timestamp"}):
 		"""
@@ -103,6 +107,7 @@ class RedisHook(BaseHook):
 			for index_key in index_keys:
 				pipe.zadd(index_key,event[index_keys[index_key]],id_redis)
 		pipe.execute()
+		conn.connection_pool.disconnect()
 		return True
 
 	def get_event_by_key(conn,identifier,index_keys,start_time,end_time):
@@ -119,8 +124,10 @@ class RedisHook(BaseHook):
 		"""
 		try:
 			conn.zadd(measurement_name,time,value)
+			conn.connection_pool.disconnect()
 			return True
 		except Exception,e:
+			conn.connection_pool.disconnect()
 			print e
 	def get_event(conn,measurement_name,start_time,end_time):
 		"""
@@ -129,8 +136,10 @@ class RedisHook(BaseHook):
 		"""
 		try:
 			data = conn.zrangebyscore(measurement_name,start_time,end_time)
+			conn.connection_pool.disconnect()
 			return data
 		except Exception,e:
+			conn.connection_pool.disconnect()
 			print e
 
 	def zadd_compress(self,set_name,time,data_value):
@@ -140,8 +149,10 @@ class RedisHook(BaseHook):
 		   serialized_value = ujson.dumps(data_value)
 		   compressed_value =zlib.compress(serialized_value)
 		   conn.zadd(set_name,time,compressed_value)
+		   conn.connection_pool.disconnect()
 	   except Exception,exc:
 		   print "Exception in zadd_compress ",exc
+		   conn.connection_pool.disconnect()
 		   #error('Redis error in adding in set{0}'.format(exc))
 
 	def multi_set(conn, data_values, perf_type=''):
@@ -155,7 +166,9 @@ class RedisHook(BaseHook):
 		 ]
 		try:
 			pipe.execute()
+			conn.connection_pool.disconnect()
 		except Exception as exc:
+			conn.connection_pool.disconnect()
 			print "Exception in multi_set ",exc
 			#error('Redis pipe error in multi_set: {0}'.format(exc))
 
@@ -188,8 +201,10 @@ class RedisHook(BaseHook):
 						[p.hmset(KEY %(d.get('device_name'), d.get('service_name'), d.get('data_source')),d) for d in data_values]
 						# perform all operations atomically
 				p.execute()
+				conn.connection_pool.disconnect()
 		except Exception as exc:
 				#error('Redis pipe error in update... {0}, retrying...'.format(exc))
+				conn.connection_pool.disconnect()
 				print "Exception in redis_update ",exc
 				# send the task for retry
 				#Task.retry(args=(data_values), kwargs={'perf_type': perf_type},
