@@ -73,7 +73,8 @@ ERROR_FOR_DEVICE_OMITTED = [404]
 kpi_rules = eval(Variable.get("kpi_rules"))
 DEBUG = False
 sv_to_ds_mapping = {}
-O7_CALC_Q = "calculation_q"
+#O7_CALC_Q = "calculation_q"
+O7_CALC_Q = "poller_queue"
 down_and_unresponsive_devices = eval(redis_hook_static_5.get("current_down_devices_all"))
 def process_utilization_kpi(
 parent_dag_name, 
@@ -107,10 +108,10 @@ child_dag_name,
 
 	#To create SS dict
 	def format_data(**kwargs):
-		site_name = kwargs.get("params").get("site_name")
+		
 		device_type = kwargs.get("params").get("technology")
 		utilization_attributes = kwargs.get("params").get("attributes")
-		machine_name = ""
+		machine_name = kwargs.get("params").get("machine_name")
 		ss_kpi_dict = {
 				'site_name': 'unknown' ,
 				'device_name': 'unknown',
@@ -130,14 +131,14 @@ child_dag_name,
 				'avg_value':'unknown',
 				'machine_name':'unknown'
 				}
-
-		ss_data =redis_hook_util_10.rget("calculated_utilization_%s_%s"%(device_type,site_name))
+		
+		ss_data =redis_hook_util_10.rget("calculated_utilization_%s_%s"%(device_type,machine_name))
 		cur_processing_time = backtrack_x_min(time.time(),300) + 120 # this is used to rewind the time to previous multiple of 5 value so that kpi can be shown accordingly
 		ss_devices_list = []
 		for ss_device in ss_data:
 			ss_device = eval(ss_device)
 			hostname = ss_device.get('hostname')
-			machine_name = ss_device.get('site').split("_")[0]
+			
 
 			for service in ss_device.get('services'):
 				 
@@ -161,8 +162,13 @@ child_dag_name,
 				if not isinstance(ss_device.get(service),dict):
 					#handling cur_value if it is greater than 100
 					cur_value=ss_device.get(service)
-					if cur_value > 100.00:
-						cur_value = 100
+					if ss_device.get(service) and ss_device.get(service) != None:
+						cur_value=ss_device.get(service)
+						try:
+							if isinstance(curr_value,float) and cur_value and cur_value > 100.00:
+								cur_value = 100
+						except Exception:
+							logging.error("Exception while handling above 100 entries")
 
 					ss_kpi_dict['severity']= calculate_severity(service,ss_device.get(service))
 					ss_kpi_dict['age']= calculate_age(hostname,ss_kpi_dict['severity'],ss_device.get('device_type'),cur_processing_time,service)
@@ -176,13 +182,26 @@ child_dag_name,
 				else:
 					for data_source in ss_device.get(service):
 						ds_values = ss_device.get(service)
+						curr_value= ss_device.get(service).get(data_source)
+						if isinstance(curr_value,str):
+							try:
+								curr_value=float(curr_value)
+								if isinstance(curr_value,float):
+									if curr_value > 100.00:
+										curr_value=100
+							except Exception:
+								logging.error("Unable to convert to float")
+						else:
+							if curr_value > 100.00:
+								curr_value=100
+
 						ss_kpi_dict['data_source']=data_source
 						ss_kpi_dict['severity']= calculate_severity(service,ds_values.get(data_source))
 						ss_kpi_dict['age']= calculate_age(hostname,ss_kpi_dict['severity'],ss_device.get('device_type'),cur_processing_time,service)
-						ss_kpi_dict['current_value'] = ss_device.get(service).get(data_source)
-						ss_kpi_dict['avg_value']=ss_device.get(service).get(data_source)
-						ss_kpi_dict['min_value']=ss_device.get(service).get(data_source)
-						ss_kpi_dict['max_value']=ss_device.get(service).get(data_source)
+						ss_kpi_dict['current_value'] = curr_value
+						ss_kpi_dict['avg_value']=curr_value
+						ss_kpi_dict['min_value']=curr_value
+						ss_kpi_dict['max_value']=curr_value
 						if ss_kpi_dict['current_value'] != None:
 							ss_devices_list.append(ss_kpi_dict.copy())
 
@@ -219,6 +238,7 @@ child_dag_name,
 			ip_address = hostnames_dict.get("ip_address")
 			ss_data_dict['hostname'] = host_name
 			ss_data_dict['ipaddress'] = ip_address
+			ss_data_dict['site_name'] = site_name
 	
 			if host_name not in down_and_unresponsive_devices:
 				for service in utilization_attributes:			
@@ -230,7 +250,11 @@ child_dag_name,
 			logging.info("No data Fetched ! Aborting Successfully")
 			return 0
 		try:
-			redis_hook_util_10.rpush("%s_%s"%(device_type,site_name),all_ss_data)
+
+			#redis_hook_util_10.rpush("%s_%s"%(device_type,site_name),all_ss_data)
+			print "++++++++++++"
+			print site_name.split("_")[0]
+			redis_hook_util_10.rpush("%s_%s"%(device_type,site_name.split("_")[0]),all_ss_data)
 		except Exception:
 			logging.warning("Unable to insert ss data into redis")
 		
@@ -240,20 +264,23 @@ child_dag_name,
 
 	def calculate_utilization_data_ss(**kwargs):
 
-		site_name = kwargs.get("params").get("site_name")
+		
+		machine_name = kwargs.get("params").get("machine_name")
 		device_type = kwargs.get("params").get("technology")
 		utilization_attributes = kwargs.get("params").get("attributes")
-
-		devices_data_dict = redis_hook_util_10.rget("%s_%s"%(device_type,site_name))
+		
+		devices_data_dict = redis_hook_util_10.rget("%s_%s"%(device_type,machine_name))
 		if len(devices_data_dict) == 0:
-			logging.info("No Data found for ss %s "%(site_name))
+			logging.info("No Data found for ss %s "%(machine_name))
 			return 1
 
 		
 		
 		ss_data = []
 		for devices in devices_data_dict:
+			
 			devices = eval(devices)
+			site_name = devices.get("site_name")
 			devices['site'] = site_name
 			devices['device_type'] = device_type
 
@@ -290,7 +317,10 @@ child_dag_name,
 			ss_data.append(devices.copy())
 			
 		#ss_utilization_list.append(ip_ul_mapper.copy())
-		redis_hook_util_10.rpush("calculated_utilization_%s_%s"%(device_type,site_name),ss_data)
+		key="calculated_utilization_%s_%s"%(device_type,machine_name)
+		redis_hook_util_10.rpush(key,ss_data)
+		print "Setting ....."
+		print "calculated_utilization_%s_%s"%(device_type,machine_name)
 		#redis_hook_util_10.rpush("calculated_ss_utilization_kpi",ss_utilization_list)
 
 	def aggregate_utilization_data(*args,**kwargs):
@@ -311,8 +341,8 @@ child_dag_name,
 	config_machines = set([site.split("_")[0] for site in config_sites])
 	aggregate_dependency_ss = {}
 	aggregate_dependency_bs = {}
-	ss_calc_task_list = []
-	bs_calc_task_list = []
+	calculate_task_list={}
+	format_task_list={}
 	
 	#TODo Remove this if ss >> bs task
 	# calculate_utilization_lost_ss_bs_task = PythonOperator(
@@ -337,7 +367,30 @@ child_dag_name,
 				)
 			aggregate_dependency_ss[each_machine_name] = aggregate_utilization_data_ss_task
 
-			
+			calculate_utilization_data_ss_task = PythonOperator(
+					task_id = "calculate_ss_utilization_kpi_of_%s"%each_machine_name,
+					provide_context=True,
+					trigger_rule = 'all_done',
+					python_callable=calculate_utilization_data_ss,
+					params={"machine_name":each_machine_name,"technology":ss_name,'attributes':utilization_attributes},
+					dag=utilization_kpi_subdag_dag,
+					queue = O7_CALC_Q,
+					
+					)
+
+			format_data_ss_task = PythonOperator(
+					task_id = "format_data_of_ss_%s"%each_machine_name,
+					provide_context=True,
+					python_callable=format_data,
+					trigger_rule = 'all_done',
+					params={"machine_name":each_machine_name,"technology":ss_name,'attributes':utilization_attributes},
+					dag=utilization_kpi_subdag_dag,
+					queue = celery_queue,
+					
+					)
+			calculate_task_list[each_machine_name] = calculate_utilization_data_ss_task
+			calculate_utilization_data_ss_task >> format_data_ss_task
+			format_data_ss_task >> aggregate_utilization_data_ss_task
 			
 			#we gotta create teh crazy queries WTF this is so unsafe
 
@@ -370,14 +423,14 @@ child_dag_name,
 					queue = O7_CALC_Q,
 					trigger_rule = 'all_done'
 					)
-			
+				
 				update_data_in_mysql << aggregate_utilization_data_ss_task
 				insert_data_in_mysql << aggregate_utilization_data_ss_task
 
-
+	db_list=[]
 	for each_site_name in ss_tech_sites:
 		if each_site_name in config_sites:
-			
+			machine = each_site_name.split("_")[0]
 			get_required_data_ss_task = PythonOperator(
 				task_id = "get_utilization_data_of_ss_%s"%each_site_name,
 				provide_context=True,
@@ -388,54 +441,36 @@ child_dag_name,
 				queue = celery_queue
 				)
 
-			calculate_utilization_data_ss_task = PythonOperator(
-				task_id = "calculate_ss_utilization_kpi_of_%s"%each_site_name,
-				provide_context=True,
-				trigger_rule = 'all_done',
-				python_callable=calculate_utilization_data_ss,
-				params={"site_name":each_site_name,"technology":ss_name,'attributes':utilization_attributes},
-				dag=utilization_kpi_subdag_dag,
-				queue = O7_CALC_Q,
-				
-				)
 
-			format_data_ss_task = PythonOperator(
-				task_id = "format_data_of_ss_%s"%each_site_name,
-				provide_context=True,
-				python_callable=format_data,
-				trigger_rule = 'all_done',
-				params={"site_name":each_site_name,"technology":ss_name,'attributes':utilization_attributes},
-				dag=utilization_kpi_subdag_dag,
-				queue = celery_queue,
-				
-				)
 
 			
 
-			get_required_data_ss_task >> calculate_utilization_data_ss_task
-			calculate_utilization_data_ss_task >> format_data_ss_task
+			
+
+			get_required_data_ss_task >> calculate_task_list.get(machine)
+			#calculate_utilization_data_ss_task >> format_data_ss_task
 			#calculate_utilization_data_ss_task >> calculate_utilization_data_bs_task
-			ss_calc_task_list.append(calculate_utilization_data_ss_task)
+			
 			
 			
 			
 
-			machine_name = each_site_name.split("_")[0]
-			try:
+			
+			# try:
 				
-				aggregate_dependency_ss[machine_name] << format_data_ss_task
+			# 	aggregate_dependency_ss[machine_name] << format_data_ss_task
 				
-			except:
-				logging.info("Site Not Found %s"%(machine_name))
-				pass
+			# except:
+			# 	logging.info("Site Not Found %s"%(machine_name))
+			# 	pass
 
 		
 		else:
 			logging.info("Skipping %s"%(each_site_name))
 
 
-	#print bs_calc_task_list 
-	#print ss_calc_task_list
+	
+
 
 	
 	return utilization_kpi_subdag_dag

@@ -62,7 +62,8 @@ _operators = {
     'generic_transfer': ['GenericTransfer'],
     'oracle_operator': ['OracleOperator'],
     'memc_to_mysql_operator':['MemcToMySqlOperator'],
-    'redis_to_mysql_operator':['RedisToMySqlOperator']
+    'redis_to_mysql_operator':['RedisToMySqlOperator'],
+    'kafka_extractor_operator':['KafkaExtractorOperator']
 }
 
 _import_module_attrs(globals(), _operators)

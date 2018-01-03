@@ -239,35 +239,20 @@ def createDict(data):
 def process_kpi_rules(all_services_dict):
 	#TODO Update this code for both ul_issue and other KPIS
 	kpi_rule_dict = {}
-	formula_mapper = eval(Variable.get('ul_issue_kpi_to_formula_mapping'))
-	kpi_services_mapper = eval(Variable.get('ul_issue_services_mapping'))
-	kpi_services_mapper = eval(Variable.get('provision_services_mapping'))
-	formula_mapper = eval(Variable.get('provision_kpi_to_formula_mapping'))
-	util_mapper = eval(Variable.get('utilization_kpi_attributes'))
+	formula_mapper = eval(Variable.get('kpi_rule_function_mapper'))
 	
-	for service in all_services_dict.keys():
-		if "util_kpi" in service:
-			try:
-				
-				device_type = ""
-				for device_type_loop in formula_mapper:
-					if service in formula_mapper.get(device_type_loop):
-						device_type = device_type_loop
 	
-				kpi_services = kpi_services_mapper.get(device_type)
-		
-				kpi_rule_dict[service] = {
-				"name":service,
-				"isFunction":False,
-				"formula":"calculate_%s_utilization"%(service),
-				"isarray":[False,False],
-				"service":kpi_services,
-				"arraylocations":0
-				}
-			except Exception:
-				print service
-				traceback.print_exc()
-				continue
+	for service in formula_mapper:
+		is_Function = False if "round" in formula_mapper.get(service) else True
+		kpi_rule_dict[service] = {
+		"name":service,
+		"isFunction":is_Function,
+		"formula":formula_mapper.get(service),
+		"isarray":[False,False],
+		"service":service,
+		"arraylocations":0
+		}
+			
 	print  kpi_rule_dict
 
 	return kpi_rule_dict

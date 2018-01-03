@@ -35,7 +35,7 @@ def get_from_socket(site_name, query):
     machine = site_name[:-8]
     #socket_ip = _LIVESTATUS[machine]['host']
     #socket_port = _LIVESTATUS[machine][site_name]['port']
-    s.connect(('115.114.79.47', 6661))
+    s.connect(('10.133.19.165', 6561))
     #s.connect(socket_path)
     s.settimeout(60.0)
     s.send(query)
@@ -83,5 +83,8 @@ dd_query="GET services\nColumns: host_name service_state\nFilter: service_descri
 
 device_down_query = "GET services\nColumns: host_name\nFilter: service_description ~ Check_MK\nFilter: service_state = 3\nFilter: service_state = 2\nOr: 2\n"+\
                                 "And: 2\nOutputFormat: python\n"
-nw_qry_output = eval(get_from_socket(site_name, device_down_query))
+
+device_down_mac_query = "GET services\nColumns: host_name service_perf_data\nFilter: service_description ~~ mac\nFilter: service_state = 3\nFilter: service_state = 2\nOr: 2\n"+\
+                                "And: 2\nOutputFormat: python\n"
+nw_qry_output = eval(get_from_socket(site_name, device_down_mac_query))
 print nw_qry_output,len(nw_qry_output)

@@ -26,7 +26,8 @@ _hooks = {
     'mssql_hook': ['MsSqlHook'],
     'oracle_hook': ['OracleHook'],
     'redis_hook':['RedisHook'],
-    'memcache_hook':['MemcacheHook']
+    'memcache_hook':['MemcacheHook'],
+    'kafka_hook':['KafkaHook']
 }
 
 _import_module_attrs(globals(), _hooks)

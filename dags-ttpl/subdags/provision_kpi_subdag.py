@@ -91,9 +91,9 @@ child_dag_name,
 
 	#To create SS dict
 	def format_ss_data(**kwargs):
-		site_name = kwargs.get("params").get("site_name")
+		
 		device_type = kwargs.get("params").get("technology")
-		machine_name = ""
+		machine_name = kwargs.get("params").get("machine_name")
 		ss_kpi_dict = {
 				'site_name': 'unknown' ,
 				'device_name': 'unknown',
@@ -114,13 +114,12 @@ child_dag_name,
 				'machine_name':'unknown'
 				}
 
-		ss_data =redis_hook_7.rget("calculated_ss_provision_%s_%s"%(device_type,site_name))
+		ss_data =redis_hook_7.rget("calculated_ss_provision_%s_%s"%(device_type,machine_name))
 		cur_processing_time = backtrack_x_min(time.time(),300)+120 # this is used to rewind the time to previous multiple of 5  and added 2 mins value so that kpi can be shown accordingly
 		ss_devices_list = []
 		for ss_device in ss_data:
 			ss_device = eval(ss_device)
 			hostname = ss_device.get('hostname')
-			machine_name = ss_device.get('site').split("_")[0]
 			for service in ss_device.get('services'):
 				data_source = 'ss_state'
 				thresholds = get_severity_values(service)
@@ -156,6 +155,7 @@ child_dag_name,
 	def get_required_data_ss(**kwargs):
 		site_name = kwargs.get("params").get("site_name")
 		device_type = kwargs.get("params").get("technology")
+		machine_name = site_name.split("_")[0]
 		ss_data_dict = {}
 		all_ss_data = []
 		# print "+++++++++++++++++++++++++"
@@ -183,6 +183,7 @@ child_dag_name,
 			ip_address = hostnames_dict.get("ip_address")
 			ss_data_dict['hostname'] = host_name
 			ss_data_dict['ipaddress'] = ip_address
+			ss_data_dict['site_name'] = site_name
 			
 			
 			for service in provision_service_mapping.get(ss_name):
@@ -195,7 +196,7 @@ child_dag_name,
 			logging.info("No data Fetched ! Aborting Successfully")
 			return 0
 		try:
-			redis_hook_7.rpush("%s_%s"%(device_type,site_name),all_ss_data)
+			redis_hook_7.rpush("%s_%s"%(device_type,machine_name),all_ss_data)
 		except Exception:
 			logging.warning("Unable to insert ss data into redis")
 		
@@ -204,12 +205,12 @@ child_dag_name,
 
 
 	def calculate_provision_data_ss(**kwargs):
-		site_name = kwargs.get("params").get("site_name")
+		machine_name = kwargs.get("params").get("machine_name")
 		device_type = kwargs.get("params").get("technology")
 
-		devices_data_dict = redis_hook_7.rget("%s_%s"%(device_type,site_name))
+		devices_data_dict = redis_hook_7.rget("%s_%s"%(device_type,machine_name))
 		if len(devices_data_dict) == 0:
-			logging.info("No Data found for ss %s "%(site_name))
+			logging.info("No Data found for ss %s "%(machine_name))
 			return 1
 
 		services = device_to_service_mapper.get(device_type)
@@ -218,7 +219,7 @@ child_dag_name,
 		ss_data = []
 		for devices in devices_data_dict:
 			devices = eval(devices)
-			devices['site'] = site_name
+			devices['site'] = devices.get('site_name')
 			devices['device_type'] = device_type
 			
 
@@ -239,7 +240,7 @@ child_dag_name,
 			ss_data.append(devices.copy())
 			
 		ss_provision_list.append(ip_ul_mapper.copy())
-		redis_hook_7.rpush("calculated_ss_provision_%s_%s"%(device_type,site_name),ss_data)
+		redis_hook_7.rpush("calculated_ss_provision_%s_%s"%(device_type,machine_name),ss_data)
 		#redis_hook_7.rpush("calculated_ss_provision_kpi",ss_provision_list)
 
 	def aggregate_provision_data(*args,**kwargs):
@@ -258,10 +259,8 @@ child_dag_name,
 
 	machine_names = set([site.split("_")[0] for site in ss_tech_sites])
 	config_machines = set([site.split("_")[0] for site in config_sites])
-	aggregate_dependency_ss = {}
-	aggregate_dependency_bs = {}
-	ss_calc_task_list = []
-	bs_calc_task_list = []
+	
+	bs_calc_task = {}
 	
 	#TODo Remove this if ss >> bs task
 	# calculate_provision_lost_ss_bs_task = PythonOperator(
@@ -283,9 +282,31 @@ child_dag_name,
 				dag=provision_kpi_subdag_dag,
 				queue = celery_queue
 				)
-			aggregate_dependency_ss[each_machine_name] = aggregate_provision_data_ss_task
-
 			
+
+			calculate_utilization_data_ss_task = PythonOperator(
+				task_id = "calculate_ss_provision_kpi_of_%s"%each_machine_name,
+				provide_context=True,
+				trigger_rule = 'all_done',
+				python_callable=calculate_provision_data_ss,
+				params={"machine_name":each_machine_name,"technology":ss_name},
+				dag=provision_kpi_subdag_dag,
+				queue = celery_queue,
+				
+				)
+			bs_calc_task[each_machine_name] = calculate_utilization_data_ss_task
+			format_data_ss_task = PythonOperator(
+				task_id = "format_data_of_ss_%s"%each_machine_name,
+				provide_context=True,
+				python_callable=format_ss_data,
+				trigger_rule = 'all_done',
+				params={"machine_name":each_machine_name,"technology":ss_name},
+				dag=provision_kpi_subdag_dag,
+				queue = celery_queue,
+				
+				)
+			calculate_utilization_data_ss_task >> format_data_ss_task
+			format_data_ss_task >> aggregate_provision_data_ss_task
 			
 			#we gotta create teh crazy queries WTF this is so unsafe
 
@@ -326,7 +347,7 @@ child_dag_name,
 
 	for each_site_name in ss_tech_sites:
 		if each_site_name in config_sites:
-			
+			machine = each_site_name.split("_")[0]
 			get_required_data_ss_task = PythonOperator(
 				task_id = "get_provision_data_of_ss_%s"%each_site_name,
 				provide_context=True,
@@ -337,46 +358,19 @@ child_dag_name,
 				queue = celery_queue
 				)
 
-			calculate_utilization_data_ss_task = PythonOperator(
-				task_id = "calculate_ss_provision_kpi_of_%s"%each_site_name,
-				provide_context=True,
-				trigger_rule = 'all_done',
-				python_callable=calculate_provision_data_ss,
-				params={"site_name":each_site_name,"technology":ss_name},
-				dag=provision_kpi_subdag_dag,
-				queue = celery_queue,
-				
-				)
-
-			format_data_ss_task = PythonOperator(
-				task_id = "format_data_of_ss_%s"%each_site_name,
-				provide_context=True,
-				python_callable=format_ss_data,
-				trigger_rule = 'all_done',
-				params={"site_name":each_site_name,"technology":ss_name},
-				dag=provision_kpi_subdag_dag,
-				queue = celery_queue,
-				
-				)
+			
 
 			
 
-			get_required_data_ss_task >> calculate_utilization_data_ss_task
-			calculate_utilization_data_ss_task >> format_data_ss_task
+			get_required_data_ss_task >> bs_calc_task.get(machine)
+			
 			#calculate_utilization_data_ss_task >> calculate_utilization_data_bs_task
-			ss_calc_task_list.append(calculate_utilization_data_ss_task)
+			#ss_calc_task_list.append(calculate_utilization_data_ss_task)
 			
 			
 			
 
-			machine_name = each_site_name.split("_")[0]
-			try:
-				
-				aggregate_dependency_ss[machine_name] << format_data_ss_task
-				
-			except:
-				logging.info("Site Not Found %s"%(machine_name))
-				pass
+			
 
 		
 		else:
