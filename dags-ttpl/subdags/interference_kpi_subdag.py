@@ -11,6 +11,7 @@ from subdags.interference_utility import calculate_cambium_all_ss_dl_interferenc
 from subdags.interference_utility import calculate_cambium_ss_ul_interference
 from subdags.interference_utility import calculate_cambium_i_and_m_ss_ul_interference
 from subdags.interference_utility import calculate_cambium_bs_interference
+from subdags.interference_utility import calculate_cambium_bs_dl_interference
 from subdags.interference_utility import calculate_cambiumi_bs_interference
 from subdags.interference_utility import calculate_cambiumm_bs_interference
 from subdags.interference_utility import backtrack_x_min
@@ -332,7 +333,7 @@ child_dag_name,
 				ip_address = hostnames_dict.get("ip_address")
 				
 
-				connected_ss =  memc_con.get("%s_conn_ss"%(host_name))
+				connected_ss =  memc_con.get("%s_active_ss"%(host_name))
 				bs_data_dict['hostname'] = host_name
 				bs_data_dict['ipaddress'] = ip_address
 				bs_data_dict['connectedss'] = connected_ss

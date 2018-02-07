@@ -45,24 +45,42 @@ def calculate_cambium_all_ss_dl_interference(cambium_beacon):
 def calculate_cambium_ss_ul_interference(cambium_ul_rssi,cambium_reg,cambium_session_uptime,cambium_device_uptime):
 	try:
 		interference=0
-		rssi_check = False
-		reg_check = False
-		session_uptime_check = False
-		device_uptime_check = False
+		rssi_check = None
+		reg_check = None
+		session_uptime_check = None
+		device_uptime_check = None
 		if cambium_ul_rssi and cambium_ul_rssi != None:
 			for ul_rssi in cambium_ul_rssi:
 				if ul_rssi < -75:
 					rssi_check = True
+				else:
+					rssi_check = False
 		if cambium_reg and len(cambium_reg) == 3:
 			if int(cambium_reg[1]) - int(cambium_reg[0]) > 0:
 				reg_check = True
+			else:
+				reg_check = False
+
 		if cambium_session_uptime and len(cambium_session_uptime) == 3:
 			if check_session_uptime_difference(cambium_session_uptime):
 				session_uptime_check = True
+			else:
+				session_uptime_check = False
+
 		if cambium_device_uptime and cambium_session_uptime and len(cambium_device_uptime) == 3 and len(cambium_session_uptime) == 3:
 			if check_device_uptime_difference(cambium_session_uptime,cambium_device_uptime):
 				device_uptime_check = True
+			else:
+				device_uptime_check = False
 
+		if rssi_check == None:
+			rssi_check  = True
+		if rssi_check == None:
+                        reg_check  = False
+		if rssi_check == None:
+                        session_uptime_check  = False
+		if rssi_check == None:
+                        device_uptime_check  = True
 
 		if rssi_check and (reg_check or session_uptime_check) and device_uptime_check:
 			interference = 1
@@ -83,35 +101,51 @@ def calculate_cambium_i_and_m_ss_ul_interference(cambium_ul_snr,cambium_reg,camb
 			
 
 			interference=0
-			snr_check = False
-			reg_check = False
-			session_uptime_check = False
-			device_uptime_check = False
+			snr_check = None
+			reg_check = None
+			session_uptime_check = None
+			device_uptime_check = None
 			
 			if cambium_ul_snr and cambium_ul_snr != None:
 				for ul_rssi in cambium_ul_snr:
 					if cambium_ul_snr < 20:
 						snr_check = True
-
+					else:
+						snr_check = False
 			if cambium_reg and len(cambium_reg) == 3:
 				
 				if int(cambium_reg[1]) - int(cambium_reg[0]) > 0 and int(cambium_reg[2]) - int(cambium_reg[1]) > 0:
 					reg_check = True
+				else:
+					reg_check =  False
 			else:
 				return 404
 			
 			if cambium_session_uptime and len(cambium_session_uptime) > 3:
 				if check_session_uptime_difference(cambium_session_uptime):
 					session_uptime_check = True
+				else:
+					session_uptime_check = False
 			else:
 				return 404
 			
 			if cambium_device_uptime and cambium_session_uptime and len(cambium_device_uptime) > 3 and len(cambium_session_uptime) > 3:
 				if check_device_uptime_difference(cambium_session_uptime,cambium_device_uptime):
 					device_uptime_check = True
+				else:
+					device_uptime_check = False
 			else:
 				return 404
 
+			if snr_check == None:
+				snr_check = False
+			if reg_check == None:
+                                reg_check = False
+			if session_uptime_check == None:
+                                session_uptime_check = False
+			if device_uptime_check == None:
+                               device_uptime_check = True
+			
 			
 			if (snr_check or reg_check or session_uptime_check) and device_uptime_check:
 				interference = 1
@@ -132,6 +166,65 @@ def calculate_cambium_i_and_m_ss_ul_interference(cambium_ul_snr,cambium_reg,camb
 
 
 #############################################BS INTERFERENCE###############################################################################################
+def calculate_cambium_bs_dl_interference(ss_data,bs,bs_services,ss_services):
+	#serv_name = bs.get(service) #this is sec_id as written in variable interference_services_mapping
+	bs_interference_dict = {'pmp1':0}
+	bs_interference = 0
+	if bs.get("connectedss") and bs.get("connectedss") != None:
+	
+		if len(bs.get("connectedss") )> 0:
+			try:
+				
+				connected_ss = bs.get("connectedss")
+				total_ss_len = len(connected_ss)
+				
+			except AttributeError:
+				print "EXCEPTION %s"%(bs)
+				
+			for ss in connected_ss:
+				try:
+					
+					if ss_data.get(ss):
+						ss_processed_data = ss_data.get(ss)
+						for ss_service in ss_services:
+							if ss_processed_data.get(ss_service):
+								if ss_processed_data.get(ss_service) == 1:
+									bs_interference = bs_interference+1
+									
+
+								
+					else:
+						#print "Didnt find the connected SS in the bucket yet"
+						bs_interference = bs_interference + 0
+						redis_hook_6.rpush('lost_ss_queue',bs)
+						
+						#here SS is not found possible it's onto some other site due to asshole support people lets create a bucket for them
+
+				except Exception:
+					# SAME SHIT HERE too
+					#print "EXCEPTI0N"
+					bs_interference = bs_interference + 0
+				
+			bs_interference_percent = float((bs_interference/float(total_ss_len))*100)
+			bs_interference_percent = round(bs_interference_percent,2)
+			
+			if bs_interference_percent > 60:
+				bs_interference_dict['pmp1'] = 1
+			else:
+				bs_interference_dict['pmp1'] = 1	 
+			
+		else:
+			#print "No SS Connected "
+			bs_interference_dict['pmp1'] = 404
+
+
+
+		return bs_interference_dict
+
+	else:
+		bs_interference_dict['pmp1'] = 404
+		return bs_interference_dict
+
 def calculate_cambium_bs_interference(ss_data,bs,bs_services,ss_services):
 	#serv_name = bs.get(service) #this is sec_id as written in variable interference_services_mapping
 	bs_interference_dict = {'pmp1':0}
@@ -519,3 +612,10 @@ def backtrack_x_min(x,seconds):
 def forward_x_min(x,seconds):
 	value= int(math.ceil(x / seconds)) * seconds
 	return value
+
+def formula_factory(list_of_variable,choice):
+	type_of_formula[0] = "%s and (%s or %s) and %s"
+	chosen_list =  type_of_formula.split("%s")
+	for element in chosen_list:
+		if vars != None:
+			type_of_formula[choice].replace("[%s]"%(list_of_variable.index(vars)))
